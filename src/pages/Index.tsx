@@ -6,6 +6,7 @@ import MarketFeed from "@/components/MarketFeed";
 import Portfolio from "@/components/Portfolio";
 import VoiceConsole from "@/components/VoiceConsole";
 import VoiceControlPanel from "@/components/VoiceControlPanel";
+import VoiceTutorial from "@/components/VoiceTutorial";
 import BuyModal from "@/components/BuyModal";
 import SellModal from "@/components/SellModal";
 import { Token, Holding, VoiceLog } from "@/types/trading";
@@ -237,6 +238,7 @@ const Index = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar balance={balance} />
+      <VoiceTutorial />
 
       <main className="flex-1 max-w-[1800px] mx-auto w-full p-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6" style={{ minHeight: 'calc(100vh - 400px)' }}>
