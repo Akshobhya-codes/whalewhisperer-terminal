@@ -1,10 +1,12 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AudioRecorder, blobToBase64, base64ToAudioUrl } from "@/utils/audioRecorder";
 import { parseVoiceCommand, generateAIResponse } from "@/utils/voiceCommands";
 import { supabase } from "@/integrations/supabase/client";
 import { Token, Holding } from "@/types/trading";
+import WaveformVisualizer from "./WaveformVisualizer";
+import { Badge } from "@/components/ui/badge";
 
 interface VoiceControlPanelProps {
   onCommand: (userText: string, aiResponse: string) => void;
@@ -17,9 +19,44 @@ interface VoiceControlPanelProps {
 const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteCommand }: VoiceControlPanelProps) => {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcribedText, setTranscribedText] = useState("");
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Hotkey support (Space bar)
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Only activate on Space if not typing in an input
+      if (e.code === 'Space' && !isProcessing && e.target === document.body) {
+        e.preventDefault();
+        handleVoiceCommand();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [isListening, isProcessing]);
+
+  // Track audio playback for speaking state
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handlePlay = () => setIsSpeaking(true);
+    const handleEnded = () => setIsSpeaking(false);
+    const handlePause = () => setIsSpeaking(false);
+
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('pause', handlePause);
+
+    return () => {
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('pause', handlePause);
+    };
+  }, []);
 
   const handleVoiceCommand = async () => {
     if (isListening) {
@@ -109,64 +146,58 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   return (
     <div className="glass-card rounded-xl p-6">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-orbitron font-bold text-foreground">
-            🎙️ Voice Control
-          </h2>
-          <span className="text-xs text-primary font-inter animate-pulse">
-            (Hathora Voice AI Active 🎙️)
-          </span>
-        </div>
+        <h2 className="text-2xl font-bold text-gradient">Voice Commands</h2>
+        <Badge variant="outline" className="text-xs">
+          Press <kbd className="px-2 py-1 mx-1 bg-muted rounded">Space</kbd> to activate
+        </Badge>
       </div>
-
+      
       <div className="flex flex-col items-center gap-4">
+        {/* Waveform Visualizer */}
+        <WaveformVisualizer isActive={isListening || isSpeaking} isSpeaking={isSpeaking} />
+
         <Button
           onClick={handleVoiceCommand}
           disabled={isProcessing}
-          className={`relative w-20 h-20 rounded-full font-orbitron transition-all duration-300 ${
-            isListening
-              ? "bg-secondary animate-pulse glow-purple"
-              : isProcessing
-              ? "bg-muted-foreground cursor-not-allowed"
-              : "bg-primary hover:bg-primary/90 hover:glow-cyan"
+          size="lg"
+          className={`rounded-full w-20 h-20 transition-all ${
+            isListening 
+              ? 'bg-destructive hover:bg-destructive/90 animate-pulse scale-110' 
+              : 'bg-primary hover:bg-primary/90 hover-scale'
           }`}
         >
           {isListening ? (
-            <MicOff className="w-8 h-8" />
+            <MicOff className="h-8 w-8" />
           ) : (
-            <Mic className="w-8 h-8" />
-          )}
-          
-          {isListening && (
-            <div className="absolute inset-0 rounded-full border-4 border-secondary animate-ping" />
+            <Mic className="h-8 w-8" />
           )}
         </Button>
 
         <div className="text-center">
-          <div className="text-sm font-orbitron font-semibold text-foreground mb-1">
-            {isProcessing ? "Processing..." : isListening ? "Listening... (click to stop)" : "Speak to WhaleWhisperer"}
-          </div>
-          {transcribedText && !isListening && !isProcessing && (
-            <div className="text-xs text-muted-foreground font-inter">
-              "{transcribedText}"
-            </div>
+          <p className="text-sm text-muted-foreground mb-2">
+            {isProcessing 
+              ? 'Processing your command...' 
+              : isSpeaking 
+              ? 'AI is responding...'
+              : isListening
+              ? 'Listening... Speak now'
+              : 'Click or press Space to speak'}
+          </p>
+          {transcribedText && (
+            <p className="text-sm font-medium animate-fade-in">
+              {transcribedText}
+            </p>
           )}
         </div>
 
-        {isListening && (
-          <div className="flex gap-2">
-            {[...Array(5)].map((_, i) => (
-              <div
-                key={i}
-                className="w-1 bg-primary rounded-full animate-pulse"
-                style={{
-                  height: Math.random() * 30 + 10 + "px",
-                  animationDelay: i * 0.1 + "s",
-                }}
-              />
-            ))}
+        <div className="text-center space-y-2">
+          <p className="text-xs text-muted-foreground">Try saying:</p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Buy 100 BONK"</span>
+            <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Sell all PEPE"</span>
+            <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Check my portfolio"</span>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
