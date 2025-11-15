@@ -1,53 +1,109 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AudioRecorder, blobToBase64, base64ToAudioUrl } from "@/utils/audioRecorder";
+import { parseVoiceCommand, generateAIResponse } from "@/utils/voiceCommands";
+import { supabase } from "@/integrations/supabase/client";
+import { Token, Holding } from "@/types/trading";
 
 interface VoiceControlPanelProps {
   onCommand: (userText: string, aiResponse: string) => void;
+  tokens: Token[];
+  holdings: Holding[];
+  balance: number;
+  onExecuteCommand: (command: any) => void;
 }
 
-const VoiceControlPanel = ({ onCommand }: VoiceControlPanelProps) => {
+const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteCommand }: VoiceControlPanelProps) => {
   const [isListening, setIsListening] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [transcribedText, setTranscribedText] = useState("");
+  const recorderRef = useRef<AudioRecorder | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const simulateVoiceCommand = () => {
-    setIsListening(true);
-    setTranscribedText("Listening...");
+  const handleVoiceCommand = async () => {
+    if (isListening) {
+      // Stop recording
+      try {
+        setIsProcessing(true);
+        const audioBlob = await recorderRef.current!.stop();
+        const base64Audio = await blobToBase64(audioBlob);
 
-    // Simulate voice recognition after 3 seconds
-    setTimeout(() => {
-      const commands = [
-        {
-          user: "Buy 100 BONK",
-          ai: "Simulating purchase of 100 BONK at current market price. Added to your portfolio.",
-        },
-        {
-          user: "Sell all PEPE",
-          ai: "Selling all PEPE holdings. Transaction complete.",
-        },
-        {
-          user: "What's my portfolio worth?",
-          ai: "Your current portfolio value is being calculated based on live market prices.",
-        },
-        {
-          user: "Show me my biggest winner",
-          ai: "Analyzing your holdings for the highest profit percentage...",
-        },
-        {
-          user: "Buy 50 dollars of DOGE",
-          ai: "Executing buy order for $50 worth of DOGE at current market price.",
-        },
-      ];
+        console.log('Sending audio to Hathora STT...');
+        setTranscribedText("Processing...");
 
-      const randomCommand = commands[Math.floor(Math.random() * commands.length)];
-      setTranscribedText(randomCommand.user);
+        // Send to Hathora STT
+        const { data: sttData, error: sttError } = await supabase.functions.invoke('hathora-stt', {
+          body: { audioData: base64Audio }
+        });
 
-      setTimeout(() => {
-        onCommand(randomCommand.user, randomCommand.ai);
+        if (sttError || !sttData?.text) {
+          throw new Error(sttError?.message || 'Failed to transcribe audio');
+        }
+
+        const transcribedText = sttData.text;
+        console.log('Transcribed:', transcribedText);
+        setTranscribedText(transcribedText);
+
+        // Parse command
+        const command = parseVoiceCommand(transcribedText);
+        console.log('Parsed command:', command);
+
+        // Execute command
+        let success = true;
+        try {
+          onExecuteCommand(command);
+        } catch (error) {
+          console.error('Command execution error:', error);
+          success = false;
+        }
+
+        // Generate AI response
+        const aiResponse = generateAIResponse(command, tokens, holdings, balance, success);
+        console.log('AI response:', aiResponse);
+
+        // Send to Hathora TTS
+        const { data: ttsData, error: ttsError } = await supabase.functions.invoke('hathora-tts', {
+          body: { text: aiResponse, voice: 'af_bella', speed: 1.1 }
+        });
+
+        if (ttsError || !ttsData?.audioContent) {
+          throw new Error(ttsError?.message || 'Failed to generate speech');
+        }
+
+        // Play audio response
+        const audioUrl = base64ToAudioUrl(ttsData.audioContent);
+        if (!audioRef.current) {
+          audioRef.current = new Audio();
+        }
+        audioRef.current.src = audioUrl;
+        audioRef.current.play();
+
+        // Log to console
+        onCommand(transcribedText, aiResponse);
+
         setIsListening(false);
         setTranscribedText("");
-      }, 1000);
-    }, 3000);
+      } catch (error) {
+        console.error('Voice command error:', error);
+        onCommand("Error", error instanceof Error ? error.message : 'Voice command failed');
+        setIsListening(false);
+        setTranscribedText("");
+      } finally {
+        setIsProcessing(false);
+      }
+    } else {
+      // Start recording
+      try {
+        recorderRef.current = new AudioRecorder();
+        await recorderRef.current.start();
+        setIsListening(true);
+        setTranscribedText("Listening...");
+      } catch (error) {
+        console.error('Failed to start recording:', error);
+        onCommand("Error", error instanceof Error ? error.message : 'Failed to access microphone');
+      }
+    }
   };
 
   return (
@@ -57,19 +113,21 @@ const VoiceControlPanel = ({ onCommand }: VoiceControlPanelProps) => {
           <h2 className="text-lg font-orbitron font-bold text-foreground">
             🎙️ Voice Control
           </h2>
-          <span className="text-xs text-muted-foreground font-inter">
-            (Hathora integration ready)
+          <span className="text-xs text-primary font-inter animate-pulse">
+            (Hathora Voice AI Active 🎙️)
           </span>
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-4">
         <Button
-          onClick={simulateVoiceCommand}
-          disabled={isListening}
+          onClick={handleVoiceCommand}
+          disabled={isProcessing}
           className={`relative w-20 h-20 rounded-full font-orbitron transition-all duration-300 ${
             isListening
               ? "bg-secondary animate-pulse glow-purple"
+              : isProcessing
+              ? "bg-muted-foreground cursor-not-allowed"
               : "bg-primary hover:bg-primary/90 hover:glow-cyan"
           }`}
         >
@@ -86,9 +144,9 @@ const VoiceControlPanel = ({ onCommand }: VoiceControlPanelProps) => {
 
         <div className="text-center">
           <div className="text-sm font-orbitron font-semibold text-foreground mb-1">
-            {isListening ? "Listening..." : "Speak to WhaleWhisperer"}
+            {isProcessing ? "Processing..." : isListening ? "Listening... (click to stop)" : "Speak to WhaleWhisperer"}
           </div>
-          {transcribedText && !isListening && (
+          {transcribedText && !isListening && !isProcessing && (
             <div className="text-xs text-muted-foreground font-inter">
               "{transcribedText}"
             </div>
