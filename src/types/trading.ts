@@ -15,3 +15,10 @@ export interface Holding {
   buyPrice: number;
   currentPrice: number;
 }
+
+export interface VoiceLog {
+  id: string;
+  timestamp: Date;
+  userText: string;
+  aiResponse: string;
+}

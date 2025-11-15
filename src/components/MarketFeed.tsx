@@ -1,22 +1,54 @@
-import { useState } from "react";
 import { TrendingUp, TrendingDown, Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Token } from "@/types/trading";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface MarketFeedProps {
   tokens: Token[];
   onBuy: (token: Token) => void;
   isSimulating: boolean;
   onToggleSimulation: () => void;
+  isLive: boolean;
+  isLoading: boolean;
 }
 
-const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation }: MarketFeedProps) => {
+const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, isLoading }: MarketFeedProps) => {
   return (
     <div className="glass-card rounded-xl p-6 h-full flex flex-col">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-orbitron font-bold text-foreground">
-          🔥 Market Feed
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-orbitron font-bold text-foreground">
+            🔥 Market Feed
+          </h2>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger>
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      isLive ? "bg-success animate-pulse glow-cyan" : "bg-muted"
+                    }`}
+                  />
+                  <span className="text-xs font-inter text-muted-foreground uppercase">
+                    {isLoading ? "Loading..." : isLive ? "Live" : "Simulation"}
+                  </span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-inter">
+                  {isLive
+                    ? "Pulling real-time data from Dexscreener API"
+                    : "Using simulated market data"}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         <Button
           onClick={onToggleSimulation}
           variant={isSimulating ? "destructive" : "default"}
