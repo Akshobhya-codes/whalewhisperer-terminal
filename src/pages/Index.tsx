@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useMarketData } from "@/hooks/useMarketData";
 import Navbar from "@/components/Navbar";
@@ -9,6 +9,7 @@ import VoiceControlPanel from "@/components/VoiceControlPanel";
 import BuyModal from "@/components/BuyModal";
 import SellModal from "@/components/SellModal";
 import { Token, Holding, VoiceLog } from "@/types/trading";
+import { ParsedCommand } from "@/utils/voiceCommands";
 
 const INITIAL_BALANCE = 10000;
 
@@ -48,7 +49,7 @@ const Index = () => {
     return () => clearInterval(interval);
   }, [isSimulating, simulatePriceChange]);
 
-  const handleVoiceCommand = (userText: string, aiResponse: string) => {
+  const handleVoiceCommand = useCallback((userText: string, aiResponse: string) => {
     const newLog: VoiceLog = {
       id: Date.now().toString(),
       timestamp: new Date(),
@@ -62,7 +63,91 @@ const Index = () => {
       title: "Voice Command Received 🎙️",
       description: userText,
     });
-  };
+  }, [toast]);
+
+  const handleExecuteVoiceCommand = useCallback((command: ParsedCommand) => {
+    switch (command.action) {
+      case 'buy': {
+        if (!command.token) break;
+        const token = tokens.find(t => t.symbol === command.token);
+        if (!token) break;
+
+        let amount = 0;
+        if (command.amount) {
+          amount = command.amount;
+        } else if (command.quantity) {
+          amount = command.quantity * token.price;
+        } else {
+          break;
+        }
+
+        if (amount > balance) break;
+
+        const quantity = amount / token.price;
+        const existingHolding = holdings.find((h) => h.tokenId === token.id);
+
+        if (existingHolding) {
+          const totalQuantity = existingHolding.quantity + quantity;
+          const newAvgPrice =
+            (existingHolding.buyPrice * existingHolding.quantity + token.price * quantity) /
+            totalQuantity;
+
+          setHoldings((prev) =>
+            prev.map((h) =>
+              h.tokenId === token.id
+                ? { ...h, quantity: totalQuantity, buyPrice: newAvgPrice }
+                : h
+            )
+          );
+        } else {
+          setHoldings((prev) => [
+            ...prev,
+            {
+              tokenId: token.id,
+              tokenName: token.name,
+              symbol: token.symbol,
+              quantity,
+              buyPrice: token.price,
+              currentPrice: token.price,
+            },
+          ]);
+        }
+
+        setBalance((prev) => prev - amount);
+        break;
+      }
+
+      case 'sell': {
+        if (!command.token) break;
+        const holding = holdings.find((h) => h.symbol === command.token);
+        if (!holding) break;
+
+        const quantity = command.quantity === -1 ? holding.quantity : (command.quantity || 0);
+        
+        if (quantity === holding.quantity) {
+          setHoldings((prev) => prev.filter((h) => h.tokenId !== holding.tokenId));
+        } else {
+          setHoldings((prev) =>
+            prev.map((h) =>
+              h.tokenId === holding.tokenId
+                ? { ...h, quantity: h.quantity - quantity }
+                : h
+            )
+          );
+        }
+
+        const usdReceived = quantity * holding.currentPrice;
+        setBalance((prev) => prev + usdReceived);
+        break;
+      }
+
+      case 'reset': {
+        setBalance(INITIAL_BALANCE);
+        setHoldings([]);
+        break;
+      }
+    }
+  }, [tokens, holdings, balance]);
 
   const handleBuy = (token: Token) => {
     setSelectedToken(token);
@@ -167,7 +252,13 @@ const Index = () => {
           </div>
           
           <div className="space-y-6">
-            <VoiceControlPanel onCommand={handleVoiceCommand} />
+            <VoiceControlPanel 
+              onCommand={handleVoiceCommand}
+              tokens={tokens}
+              holdings={holdings}
+              balance={balance}
+              onExecuteCommand={handleExecuteVoiceCommand}
+            />
             <Portfolio
               holdings={holdings}
               balance={balance}

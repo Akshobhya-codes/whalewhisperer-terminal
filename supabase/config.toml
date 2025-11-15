@@ -1,1 +1,7 @@
 project_id = "ueejgpfntgkxrnwltzcb"
+
+[functions.hathora-stt]
+verify_jwt = false
+
+[functions.hathora-tts]
+verify_jwt = false
