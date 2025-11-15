@@ -27,15 +27,14 @@ serve(async (req) => {
 
     console.log('Sending text to Hathora TTS (Kokoro model)...', { text, voice, speed });
 
-    const response = await fetch('https://api.hathora.com/models/v1/text-to-speech', {
+    const response = await fetch('https://app-01312daf-6e53-4b9d-a4ad-13039f35adc4.app.hathora.dev/v1/synthesize', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${HATHORA_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'kokoro',
-        input: text,
+        text: text,
         voice: voice,
         speed: speed,
       }),
