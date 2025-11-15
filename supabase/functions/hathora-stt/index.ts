@@ -35,7 +35,7 @@ serve(async (req) => {
     formData.append('file', audioBlob, 'audio.webm');
     formData.append('model', 'parakeet');
 
-    const response = await fetch('https://api.hathora.com/models/v1/speech-to-text', {
+    const response = await fetch('https://app-1c7bebb9-6977-4101-9619-833b251b86d1.app.hathora.dev/v1/transcribe', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${HATHORA_API_KEY}`,
