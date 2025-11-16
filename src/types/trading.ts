@@ -8,6 +8,7 @@ export interface Token {
   volume: number;
   isExtremeMove?: boolean;
   marketCap?: number;
+  volatility?: number;
 }
 
 export interface Holding {
@@ -18,6 +19,7 @@ export interface Holding {
   quantity: number;
   buyPrice: number;
   currentPrice: number;
+  realizedPL?: number;
 }
 
 export interface VoiceLog {

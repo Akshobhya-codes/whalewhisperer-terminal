@@ -24,6 +24,16 @@ const intentKeywords = {
   help: ['help', 'guide', 'tutorial', 'commands', 'how']
 };
 
+// Fuzzy match variations for custom meme coins
+const tokenAliases: Record<string, string[]> = {
+  'BLP': ['blop', 'blob', 'blope', 'blap'],
+  'ZGA': ['zuga', 'zooka', 'zuka'],
+  'FLP': ['floop', 'flute', 'flip', 'flop'],
+  'TKU': ['toku', 'tokoo', 'toco'],
+  'RMB': ['rambo', 'ramboo', 'rumbo'],
+  'MIK': ['mika', 'meeka', 'mica', 'myka']
+};
+
 // Detect intent with fuzzy matching
 function detectIntent(text: string): { intent: string; confidence: number } {
   const lowerText = text.toLowerCase();
@@ -58,6 +68,16 @@ function detectIntent(text: string): { intent: string; confidence: number } {
 // Find best matching token from market data
 function findToken(text: string, tokens: Token[]): { token: Token; confidence: number } | null {
   const lowerText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+  
+  // Check token aliases first for custom coins
+  for (const [symbol, aliases] of Object.entries(tokenAliases)) {
+    for (const alias of aliases) {
+      if (lowerText.includes(alias)) {
+        const token = tokens.find(t => t.symbol === symbol);
+        if (token) return { token, confidence: 1.0 };
+      }
+    }
+  }
   
   // Also try without spaces for acronyms (e.g., "p e p e" -> "pepe")
   const compactText = lowerText.replace(/\s+/g, '');
@@ -245,13 +265,13 @@ export function parseConfirmationResponse(text: string): {
 } {
   const lowerText = text.toLowerCase();
   
-  // Check for confirmation keywords
-  if (/\b(yes|yeah|yep|yup|sure|okay|ok|confirm|correct|right|do it|go ahead|proceed)\b/.test(lowerText)) {
+  // Check for confirmation keywords (case-insensitive)
+  if (/\b(yes|yeah|yep|yup|sure|okay|ok|confirm|correct|right|do it|go ahead|proceed)\b/i.test(text)) {
     return { action: 'confirm' };
   }
   
-  // Check for cancellation keywords
-  if (/\b(no|nope|nah|cancel|stop|abort|nevermind|never mind|don't)\b/.test(lowerText)) {
+  // Check for cancellation keywords (case-insensitive)
+  if (/\b(no|nope|nah|cancel|stop|abort|nevermind|never mind|don't)\b/i.test(text)) {
     return { action: 'cancel' };
   }
   
