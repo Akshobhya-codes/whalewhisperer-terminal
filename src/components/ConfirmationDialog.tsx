@@ -52,7 +52,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   if (!command) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
+    <Dialog open={isOpen}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
