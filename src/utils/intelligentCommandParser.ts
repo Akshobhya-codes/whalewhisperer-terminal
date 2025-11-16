@@ -196,7 +196,8 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
 
     // Regular buy/sell with amount
     if (amountData) {
-      return {
+      console.log('[Command Parser] Amount found:', amountData);
+      const result = {
         intent: intent as 'buy' | 'sell',
         token: tokenMatch.token.name,
         tokenSymbol: tokenMatch.token.symbol,
@@ -207,9 +208,12 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
         rawText: text,
         needsConfirmation: true
       };
+      console.log('[Command Parser] Returning command with amount:', result);
+      return result;
     }
 
     // Has token but no clear amount
+    console.log('[Command Parser] No amount found in command:', text);
     return {
       intent: intent as 'buy' | 'sell',
       token: tokenMatch.token.name,
