@@ -40,7 +40,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     const handleKeyPress = (e: KeyboardEvent) => {
       // Only activate on Space if not typing in an input and no modal open (unless awaiting voice confirmation)
       if (e.code === 'Space' && !isProcessing && e.target === document.body) {
-        if (!showConfirmation || isAwaitingConfirmation) {
+        if (!showConfirmation || confirmLoopActiveRef.current) {
           e.preventDefault();
           handleVoiceCommand();
         }
@@ -49,7 +49,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isListening, isProcessing, showConfirmation, isAwaitingConfirmation]);
+  }, [isListening, isProcessing, showConfirmation]);
 
   // Track audio playback for speaking state
   useEffect(() => {
@@ -232,27 +232,18 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   };
 
   const handleCommandConfirm = async (modifiedCommand?: InterpretedCommand) => {
-    const cmdToExecute = modifiedCommand || pendingCommand;
+    const cmdToExecute = modifiedCommand || pendingActionRef.current;
     if (!cmdToExecute) return;
 
     // Stop any ongoing confirmation listening loop and recording
-    confirmLoopActiveRef.current = false;
-    if (confirmChunkTimerRef.current) {
-      clearTimeout(confirmChunkTimerRef.current);
-      confirmChunkTimerRef.current = null;
-    }
+    await stopConfirmationLoop();
     if (recorderRef.current?.isRecording()) {
       try { await recorderRef.current.stop(); } catch {}
     }
 
     setIsListening(false);
     setShowConfirmation(false);
-    setIsAwaitingConfirmation(false);
     setIsProcessing(true);
-
-    if (confirmationTimeoutRef.current) {
-      clearTimeout(confirmationTimeoutRef.current);
-    }
 
     try {
       // Map interpreted command to old command format
