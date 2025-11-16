@@ -79,10 +79,10 @@ const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, i
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="font-orbitron font-semibold text-foreground">
-                      {token.name}
+                      {token.displayName}
                     </h3>
-                    <span className="text-sm text-muted-foreground font-inter">
-                      {token.symbol}
+                    <span className="text-xs text-muted-foreground font-inter">
+                      ({token.symbol})
                     </span>
                   </div>
 

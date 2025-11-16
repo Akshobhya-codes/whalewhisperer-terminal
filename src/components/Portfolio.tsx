@@ -83,14 +83,14 @@ const Portfolio = ({ holdings, balance, onSell, onReset }: PortfolioProps) => {
                   className="glass-card rounded-lg p-4 hover:glow-purple transition-all duration-300"
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="font-orbitron font-semibold text-foreground">
-                        {holding.tokenName}
-                      </h3>
-                      <span className="text-sm text-muted-foreground font-inter">
-                        {holding.symbol}
-                      </span>
-                    </div>
+                  <div>
+                    <h3 className="font-orbitron font-semibold text-foreground">
+                      {holding.displayName}
+                    </h3>
+                    <span className="text-xs text-muted-foreground font-inter">
+                      ({holding.symbol})
+                    </span>
+                  </div>
                     <Button
                       onClick={() => onSell(holding)}
                       variant="outline"

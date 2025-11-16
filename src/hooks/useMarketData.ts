@@ -9,17 +9,35 @@ const MEME_COINS = [
   "WIF", "PEPE2", "WOJAK", "TURBO", "MEME"
 ];
 
+// Generate phonetically distinct display names
+const generateDisplayName = (symbol: string, name: string): string => {
+  const displayNames: Record<string, string> = {
+    'PEPE': 'Pepper',
+    'DOGE': 'Dojo',
+    'SHIB': 'Shibu',
+    'FLOKI': 'Floki',
+    'BONK': 'Banker',
+    'WIF': 'Wiffy',
+    'PEPE2': 'Papaya',
+    'WOJAK': 'Wojack',
+    'TURBO': 'Turbo',
+    'MEME': 'Mimo',
+  };
+  
+  return displayNames[symbol] || name;
+};
+
 const FALLBACK_TOKENS: Token[] = [
-  { id: "1", name: "Pepe", symbol: "PEPE", price: 0.000012, change24h: 15.32, volume: 1250000 },
-  { id: "2", name: "Dogecoin", symbol: "DOGE", price: 0.082, change24h: -3.21, volume: 8900000 },
-  { id: "3", name: "Shiba Inu", symbol: "SHIB", price: 0.000008, change24h: 8.45, volume: 3400000 },
-  { id: "4", name: "Floki", symbol: "FLOKI", price: 0.000023, change24h: -12.11, volume: 890000 },
-  { id: "5", name: "Bonk", symbol: "BONK", price: 0.000018, change24h: 25.67, volume: 560000 },
-  { id: "6", name: "Dogwifhat", symbol: "WIF", price: 0.45, change24h: -8.92, volume: 2430000 },
-  { id: "7", name: "Pepe 2.0", symbol: "PEPE2", price: 0.00000031, change24h: 18.23, volume: 720000 },
-  { id: "8", name: "Wojak", symbol: "WOJAK", price: 0.00000041, change24h: 5.88, volume: 290000 },
-  { id: "9", name: "Turbo", symbol: "TURBO", price: 0.000045, change24h: -15.44, volume: 180000 },
-  { id: "10", name: "Meme", symbol: "MEME", price: 0.0084, change24h: 32.11, volume: 650000 },
+  { id: "1", name: "Pepe", symbol: "PEPE", displayName: "Pepper", price: 0.000012, change24h: 15.32, volume: 1250000 },
+  { id: "2", name: "Dogecoin", symbol: "DOGE", displayName: "Dojo", price: 0.082, change24h: -3.21, volume: 8900000 },
+  { id: "3", name: "Shiba Inu", symbol: "SHIB", displayName: "Shibu", price: 0.000008, change24h: 8.45, volume: 3400000 },
+  { id: "4", name: "Floki", symbol: "FLOKI", displayName: "Floki", price: 0.000023, change24h: -12.11, volume: 890000 },
+  { id: "5", name: "Bonk", symbol: "BONK", displayName: "Banker", price: 0.000018, change24h: 25.67, volume: 560000 },
+  { id: "6", name: "Dogwifhat", symbol: "WIF", displayName: "Wiffy", price: 0.45, change24h: -8.92, volume: 2430000 },
+  { id: "7", name: "Pepe 2.0", symbol: "PEPE2", displayName: "Papaya", price: 0.00000031, change24h: 18.23, volume: 720000 },
+  { id: "8", name: "Wojak", symbol: "WOJAK", displayName: "Wojack", price: 0.00000041, change24h: 5.88, volume: 290000 },
+  { id: "9", name: "Turbo", symbol: "TURBO", displayName: "Turbo", price: 0.000045, change24h: -15.44, volume: 180000 },
+  { id: "10", name: "Meme", symbol: "MEME", displayName: "Mimo", price: 0.0084, change24h: 32.11, volume: 650000 },
 ];
 
 export const useMarketData = () => {
@@ -47,14 +65,21 @@ export const useMarketData = () => {
         // Process and sort by volume
         const processedTokens: Token[] = data.pairs
           .slice(0, 10)
-          .map((pair: any, index: number) => ({
-            id: pair.pairAddress || String(index + 1),
-            name: pair.baseToken?.name || "Unknown",
-            symbol: pair.baseToken?.symbol || "???",
-            price: parseFloat(pair.priceUsd) || 0,
-            change24h: parseFloat(pair.priceChange?.h24) || 0,
-            volume: parseFloat(pair.volume?.h24) || 0,
-          }))
+          .map((pair: any, index: number) => {
+            const symbol = pair.baseToken?.symbol || "???";
+            const name = pair.baseToken?.name || "Unknown";
+            // Generate phonetically distinct display names
+            const displayName = generateDisplayName(symbol, name);
+            return {
+              id: pair.pairAddress || String(index + 1),
+              name,
+              symbol,
+              displayName,
+              price: parseFloat(pair.priceUsd) || 0,
+              change24h: parseFloat(pair.priceChange?.h24) || 0,
+              volume: parseFloat(pair.volume?.h24) || 0,
+            };
+          })
           .filter((token) => token.price > 0)
           .sort((a, b) => b.volume - a.volume);
 

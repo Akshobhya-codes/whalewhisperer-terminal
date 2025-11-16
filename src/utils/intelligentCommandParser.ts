@@ -6,6 +6,7 @@ export interface InterpretedCommand {
   intent: 'buy' | 'sell' | 'check' | 'reset' | 'help' | 'unknown';
   token?: string;
   tokenSymbol?: string;
+  tokenDisplayName?: string; // Phonetically distinct name for display
   amount?: number;
   amountType?: 'dollars' | 'tokens';
   quantity?: 'all' | number;
@@ -67,13 +68,17 @@ function findToken(text: string, tokens: Token[]): { token: Token; confidence: n
   for (const token of tokens) {
     const symbolLower = token.symbol.toLowerCase();
     const nameLower = token.name.toLowerCase();
+    const displayLower = token.displayName.toLowerCase();
     
-    // Check for exact matches first
+    // Check for exact matches first (prioritize displayName)
+    if (lowerText.includes(displayLower) || compactText.includes(displayLower)) {
+      return { token, confidence: 1.0 };
+    }
     if (lowerText.includes(symbolLower) || compactText.includes(symbolLower)) {
       return { token, confidence: 1.0 };
     }
     if (lowerText.includes(nameLower) || compactText.includes(nameLower)) {
-      return { token, confidence: 1.0 };
+      return { token, confidence: 0.95 };
     }
 
     // Check if spoken letter-by-letter (e.g., "p e p e" or "p.e.p.e.")
@@ -83,17 +88,19 @@ function findToken(text: string, tokens: Token[]): { token: Token; confidence: n
       return { token, confidence: 0.95 };
     }
 
-    // Fuzzy match against symbol and name
+    // Fuzzy match against displayName, symbol and name
     const words = lowerText.split(/\s+/);
     for (const word of words) {
       if (word.length < 2) continue;
       
+      const displaySimilarity = stringSimilarity.compareTwoStrings(word, displayLower);
       const symbolSimilarity = stringSimilarity.compareTwoStrings(word, symbolLower);
       const nameSimilarity = stringSimilarity.compareTwoStrings(word, nameLower);
       
-      const maxSimilarity = Math.max(symbolSimilarity, nameSimilarity);
+      const maxSimilarity = Math.max(displaySimilarity, symbolSimilarity, nameSimilarity);
       
-      if (maxSimilarity > 0.6 && maxSimilarity > highestScore) {
+      // Increased threshold to avoid false matches
+      if (maxSimilarity > 0.75 && maxSimilarity > highestScore) {
         highestScore = maxSimilarity;
         bestMatch = token;
       }
@@ -101,15 +108,17 @@ function findToken(text: string, tokens: Token[]): { token: Token; confidence: n
     
     // Also check compact version
     if (compactText.length >= 3) {
+      const compactDisplaySim = stringSimilarity.compareTwoStrings(compactText, displayLower);
       const compactSimilarity = stringSimilarity.compareTwoStrings(compactText, symbolLower);
-      if (compactSimilarity > 0.7 && compactSimilarity > highestScore) {
-        highestScore = compactSimilarity;
+      const maxCompactSim = Math.max(compactDisplaySim, compactSimilarity);
+      if (maxCompactSim > 0.75 && maxCompactSim > highestScore) {
+        highestScore = maxCompactSim;
         bestMatch = token;
       }
     }
   }
 
-  return bestMatch && highestScore > 0.6 ? { token: bestMatch, confidence: highestScore } : null;
+  return bestMatch && highestScore > 0.7 ? { token: bestMatch, confidence: highestScore } : null;
 }
 
 // Check for "all" quantity indicator
@@ -157,6 +166,7 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
         intent: 'sell',
         token: tokenMatch.token.name,
         tokenSymbol: tokenMatch.token.symbol,
+        tokenDisplayName: tokenMatch.token.displayName,
         quantity: 'all',
         confidence: Math.min(intentConfidence, tokenMatch.confidence),
         rawText: text,
@@ -170,6 +180,7 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
         intent: intent as 'buy' | 'sell',
         token: tokenMatch.token.name,
         tokenSymbol: tokenMatch.token.symbol,
+        tokenDisplayName: tokenMatch.token.displayName,
         amount: amountData.value,
         amountType: amountData.type,
         confidence: Math.min(intentConfidence, tokenMatch.confidence),
@@ -183,6 +194,7 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
       intent: intent as 'buy' | 'sell',
       token: tokenMatch.token.name,
       tokenSymbol: tokenMatch.token.symbol,
+      tokenDisplayName: tokenMatch.token.displayName,
       confidence: Math.min(intentConfidence, tokenMatch.confidence) * 0.5,
       rawText: text,
       needsConfirmation: true
@@ -199,23 +211,25 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
 
 // Generate human-readable confirmation text
 export function generateConfirmationText(command: InterpretedCommand): string {
+  const displayName = command.tokenDisplayName || command.tokenSymbol;
+  
   if (command.intent === 'buy') {
     if (command.amountType === 'dollars' && command.amount) {
-      return `Buy $${command.amount} worth of ${command.tokenSymbol}?`;
+      return `Buy $${command.amount} worth of ${displayName}?`;
     } else if (command.amountType === 'tokens' && command.amount) {
-      return `Buy ${command.amount} tokens of ${command.tokenSymbol}?`;
+      return `Buy ${command.amount} tokens of ${displayName}?`;
     } else {
-      return `Buy ${command.tokenSymbol}? How much?`;
+      return `Buy ${displayName}? How much?`;
     }
   }
 
   if (command.intent === 'sell') {
     if (command.quantity === 'all') {
-      return `Sell all your ${command.tokenSymbol}?`;
+      return `Sell all your ${displayName}?`;
     } else if (command.amount) {
-      return `Sell ${command.amount} ${command.tokenSymbol}?`;
+      return `Sell ${command.amount} ${displayName}?`;
     } else {
-      return `Sell ${command.tokenSymbol}? How much?`;
+      return `Sell ${displayName}? How much?`;
     }
   }
 
