@@ -161,7 +161,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         commandToExecute = {
           action: 'sell',
           token: cmdToExecute.tokenSymbol,
-          quantity: cmdToExecute.quantity === 'all' ? 'all' : cmdToExecute.amount
+          quantity: cmdToExecute.quantity === 'all' ? -1 : (cmdToExecute.amount ?? 0)
         };
       } else if (cmdToExecute.intent === 'check') {
         commandToExecute = { action: 'check' };
