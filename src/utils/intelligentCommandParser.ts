@@ -56,7 +56,10 @@ function detectIntent(text: string): { intent: string; confidence: number } {
 
 // Find best matching token from market data
 function findToken(text: string, tokens: Token[]): { token: Token; confidence: number } | null {
-  const lowerText = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+  const lowerText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+  
+  // Also try without spaces for acronyms (e.g., "p e p e" -> "pepe")
+  const compactText = lowerText.replace(/\s+/g, '');
   
   let bestMatch: Token | null = null;
   let highestScore = 0;
@@ -66,11 +69,18 @@ function findToken(text: string, tokens: Token[]): { token: Token; confidence: n
     const nameLower = token.name.toLowerCase();
     
     // Check for exact matches first
-    if (lowerText.includes(symbolLower)) {
+    if (lowerText.includes(symbolLower) || compactText.includes(symbolLower)) {
       return { token, confidence: 1.0 };
     }
-    if (lowerText.includes(nameLower)) {
+    if (lowerText.includes(nameLower) || compactText.includes(nameLower)) {
       return { token, confidence: 1.0 };
+    }
+
+    // Check if spoken letter-by-letter (e.g., "p e p e" or "p.e.p.e.")
+    const letterPattern = symbolLower.split('').join('\\s*[.,\\s]*\\s*');
+    const letterRegex = new RegExp(letterPattern, 'i');
+    if (letterRegex.test(text)) {
+      return { token, confidence: 0.95 };
     }
 
     // Fuzzy match against symbol and name
@@ -83,14 +93,23 @@ function findToken(text: string, tokens: Token[]): { token: Token; confidence: n
       
       const maxSimilarity = Math.max(symbolSimilarity, nameSimilarity);
       
-      if (maxSimilarity > 0.65 && maxSimilarity > highestScore) {
+      if (maxSimilarity > 0.6 && maxSimilarity > highestScore) {
         highestScore = maxSimilarity;
+        bestMatch = token;
+      }
+    }
+    
+    // Also check compact version
+    if (compactText.length >= 3) {
+      const compactSimilarity = stringSimilarity.compareTwoStrings(compactText, symbolLower);
+      if (compactSimilarity > 0.7 && compactSimilarity > highestScore) {
+        highestScore = compactSimilarity;
         bestMatch = token;
       }
     }
   }
 
-  return bestMatch && highestScore > 0.65 ? { token: bestMatch, confidence: highestScore } : null;
+  return bestMatch && highestScore > 0.6 ? { token: bestMatch, confidence: highestScore } : null;
 }
 
 // Check for "all" quantity indicator
@@ -181,12 +200,12 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
 // Generate human-readable confirmation text
 export function generateConfirmationText(command: InterpretedCommand): string {
   if (command.intent === 'buy') {
-    if (command.amountType === 'dollars') {
+    if (command.amountType === 'dollars' && command.amount) {
       return `Buy $${command.amount} worth of ${command.tokenSymbol}?`;
-    } else if (command.amountType === 'tokens') {
+    } else if (command.amountType === 'tokens' && command.amount) {
       return `Buy ${command.amount} tokens of ${command.tokenSymbol}?`;
     } else {
-      return `Buy ${command.tokenSymbol}? (Please specify an amount)`;
+      return `Buy ${command.tokenSymbol}? How much?`;
     }
   }
 
@@ -196,9 +215,53 @@ export function generateConfirmationText(command: InterpretedCommand): string {
     } else if (command.amount) {
       return `Sell ${command.amount} ${command.tokenSymbol}?`;
     } else {
-      return `Sell ${command.tokenSymbol}? (Please specify an amount)`;
+      return `Sell ${command.tokenSymbol}? How much?`;
     }
   }
 
   return "I didn't understand that command. Please try again.";
+}
+
+// Parse confirmation response from user
+export function parseConfirmationResponse(text: string): {
+  action: 'confirm' | 'cancel' | 'modify';
+  newAmount?: number;
+  newAmountType?: 'dollars' | 'tokens';
+} {
+  const lowerText = text.toLowerCase();
+  
+  // Check for confirmation keywords
+  if (/\b(yes|yeah|yep|yup|sure|okay|ok|confirm|correct|right|do it|go ahead|proceed)\b/.test(lowerText)) {
+    return { action: 'confirm' };
+  }
+  
+  // Check for cancellation keywords
+  if (/\b(no|nope|nah|cancel|stop|abort|nevermind|never mind|don't)\b/.test(lowerText)) {
+    return { action: 'cancel' };
+  }
+  
+  // Check for modification keywords
+  if (/\b(change|modify|make it|instead|actually)\b/.test(lowerText)) {
+    const amountData = extractAmount(text);
+    if (amountData) {
+      return {
+        action: 'modify',
+        newAmount: amountData.value,
+        newAmountType: amountData.type
+      };
+    }
+  }
+  
+  // If they just say a number, treat as modification
+  const amountData = extractAmount(text);
+  if (amountData) {
+    return {
+      action: 'modify',
+      newAmount: amountData.value,
+      newAmountType: amountData.type
+    };
+  }
+  
+  // Default to cancel if unclear
+  return { action: 'cancel' };
 }

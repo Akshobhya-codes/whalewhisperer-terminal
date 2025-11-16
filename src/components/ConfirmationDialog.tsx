@@ -57,10 +57,10 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-primary animate-pulse" />
-            Confirm Voice Command
+            Voice Confirmation ({timeLeft}s)
           </DialogTitle>
           <DialogDescription>
-            Please confirm the following action:
+            Speak or click to respond
           </DialogDescription>
         </DialogHeader>
 
@@ -68,6 +68,12 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
           <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-4">
             <p className="text-lg font-semibold text-center">
               {confirmationText}
+            </p>
+          </div>
+
+          <div className="bg-accent/20 border border-accent/30 rounded-lg p-3 mb-4">
+            <p className="text-sm text-center">
+              🎙️ <strong>Speak to respond:</strong> Say "yes", "no", or change the amount
             </p>
           </div>
 

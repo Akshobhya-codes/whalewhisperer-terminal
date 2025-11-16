@@ -7,7 +7,7 @@ import { Token, Holding } from "@/types/trading";
 import WaveformVisualizer from "./WaveformVisualizer";
 import ConfirmationDialog from "./ConfirmationDialog";
 import { Badge } from "@/components/ui/badge";
-import { interpretCommand, generateConfirmationText, InterpretedCommand } from "@/utils/intelligentCommandParser";
+import { interpretCommand, generateConfirmationText, parseConfirmationResponse, InterpretedCommand } from "@/utils/intelligentCommandParser";
 
 interface VoiceControlPanelProps {
   onCommand: (userText: string, aiResponse: string) => void;
@@ -25,22 +25,26 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   const [pendingCommand, setPendingCommand] = useState<InterpretedCommand | null>(null);
   const [confirmationText, setConfirmationText] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [isAwaitingConfirmation, setIsAwaitingConfirmation] = useState(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const confirmationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Hotkey support (Space bar)
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Only activate on Space if not typing in an input and no modal open
-      if (e.code === 'Space' && !isProcessing && !showConfirmation && e.target === document.body) {
-        e.preventDefault();
-        handleVoiceCommand();
+      // Only activate on Space if not typing in an input and no modal open (unless awaiting voice confirmation)
+      if (e.code === 'Space' && !isProcessing && e.target === document.body) {
+        if (!showConfirmation || isAwaitingConfirmation) {
+          e.preventDefault();
+          handleVoiceCommand();
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isListening, isProcessing, showConfirmation]);
+  }, [isListening, isProcessing, showConfirmation, isAwaitingConfirmation]);
 
   // Track audio playback for speaking state
   useEffect(() => {
@@ -84,38 +88,44 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     }
   };
 
-  const handleCommandConfirm = async () => {
-    if (!pendingCommand) return;
+  const handleCommandConfirm = async (modifiedCommand?: InterpretedCommand) => {
+    const cmdToExecute = modifiedCommand || pendingCommand;
+    if (!cmdToExecute) return;
 
     setShowConfirmation(false);
+    setIsAwaitingConfirmation(false);
     setIsProcessing(true);
+
+    if (confirmationTimeoutRef.current) {
+      clearTimeout(confirmationTimeoutRef.current);
+    }
 
     try {
       // Map interpreted command to old command format
       let commandToExecute: any;
 
-      if (pendingCommand.intent === 'buy') {
-        if (!pendingCommand.amount || !pendingCommand.tokenSymbol) {
+      if (cmdToExecute.intent === 'buy') {
+        if (!cmdToExecute.amount || !cmdToExecute.tokenSymbol) {
           throw new Error('Missing amount or token for buy command');
         }
         commandToExecute = {
           action: 'buy',
-          token: pendingCommand.tokenSymbol,
-          amount: pendingCommand.amountType === 'dollars' ? pendingCommand.amount : undefined,
-          quantity: pendingCommand.amountType === 'tokens' ? pendingCommand.amount : undefined
+          token: cmdToExecute.tokenSymbol,
+          amount: cmdToExecute.amountType === 'dollars' ? cmdToExecute.amount : undefined,
+          quantity: cmdToExecute.amountType === 'tokens' ? cmdToExecute.amount : undefined
         };
-      } else if (pendingCommand.intent === 'sell') {
-        if (!pendingCommand.tokenSymbol) {
+      } else if (cmdToExecute.intent === 'sell') {
+        if (!cmdToExecute.tokenSymbol) {
           throw new Error('Missing token for sell command');
         }
         commandToExecute = {
           action: 'sell',
-          token: pendingCommand.tokenSymbol,
-          quantity: pendingCommand.quantity === 'all' ? 'all' : pendingCommand.amount
+          token: cmdToExecute.tokenSymbol,
+          quantity: cmdToExecute.quantity === 'all' ? 'all' : cmdToExecute.amount
         };
-      } else if (pendingCommand.intent === 'check') {
+      } else if (cmdToExecute.intent === 'check') {
         commandToExecute = { action: 'check' };
-      } else if (pendingCommand.intent === 'reset') {
+      } else if (cmdToExecute.intent === 'reset') {
         commandToExecute = { action: 'reset' };
       }
 
@@ -123,15 +133,17 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
       onExecuteCommand(commandToExecute);
 
       // Generate success response
-      const aiResponse = `Done! ${confirmationText.replace('?', '.')}`;
-      await playAudioResponse(aiResponse);
-      onCommand(pendingCommand.rawText, aiResponse);
+      const successText = modifiedCommand 
+        ? `Updated! ${generateConfirmationText(modifiedCommand).replace('?', '.')}` 
+        : `Done! ${confirmationText.replace('?', '.')}`;
+      await playAudioResponse(successText);
+      onCommand(cmdToExecute.rawText, successText);
 
     } catch (error) {
       console.error('Command execution error:', error);
       const errorMsg = error instanceof Error ? error.message : 'Failed to execute command';
       await playAudioResponse(errorMsg);
-      onCommand(pendingCommand.rawText, errorMsg);
+      onCommand(cmdToExecute.rawText, errorMsg);
     } finally {
       setIsProcessing(false);
       setPendingCommand(null);
@@ -141,6 +153,11 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
 
   const handleCommandCancel = async () => {
     setShowConfirmation(false);
+    setIsAwaitingConfirmation(false);
+    if (confirmationTimeoutRef.current) {
+      clearTimeout(confirmationTimeoutRef.current);
+    }
+    
     const cancelMsg = "Command cancelled.";
     await playAudioResponse(cancelMsg);
     if (pendingCommand) {
@@ -148,6 +165,29 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     }
     setPendingCommand(null);
     setTranscribedText("");
+  };
+
+  const listenForConfirmation = async () => {
+    try {
+      setIsAwaitingConfirmation(true);
+      recorderRef.current = new AudioRecorder();
+      await recorderRef.current.start();
+      setIsListening(true);
+      setTranscribedText("Say yes, no, or change the amount...");
+
+      // Set auto-timeout
+      confirmationTimeoutRef.current = setTimeout(async () => {
+        if (isListening && recorderRef.current) {
+          await recorderRef.current.stop();
+          setIsListening(false);
+          await handleCommandCancel();
+        }
+      }, 8000); // 8 seconds to respond
+
+    } catch (error) {
+      console.error('Failed to start confirmation listening:', error);
+      await handleCommandCancel();
+    }
   };
 
   const handleVoiceCommand = async () => {
@@ -174,12 +214,51 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         console.log('Transcribed:', transcribedText);
         setTranscribedText(transcribedText);
 
-        // Interpret command intelligently
+        // Clear timeout if listening for confirmation
+        if (confirmationTimeoutRef.current) {
+          clearTimeout(confirmationTimeoutRef.current);
+        }
+
+        // Handle confirmation response
+        if (isAwaitingConfirmation && pendingCommand) {
+          const response = parseConfirmationResponse(transcribedText);
+          console.log('Confirmation response:', response);
+
+          if (response.action === 'confirm') {
+            await handleCommandConfirm();
+          } else if (response.action === 'cancel') {
+            await handleCommandCancel();
+          } else if (response.action === 'modify' && response.newAmount) {
+            // Update the pending command with new amount
+            const modifiedCommand = {
+              ...pendingCommand,
+              amount: response.newAmount,
+              amountType: response.newAmountType
+            };
+            
+            const newConfText = generateConfirmationText(modifiedCommand);
+            setConfirmationText(newConfText);
+            await playAudioResponse(`Updated to: ${newConfText}. Say yes to confirm or no to cancel.`);
+            
+            // Listen again for final confirmation
+            setPendingCommand(modifiedCommand);
+            setIsProcessing(false);
+            await listenForConfirmation();
+            return;
+          }
+
+          setIsListening(false);
+          setIsAwaitingConfirmation(false);
+          setIsProcessing(false);
+          return;
+        }
+
+        // Regular command interpretation
         const interpretedCmd = interpretCommand(transcribedText, tokens);
         console.log('Interpreted command:', interpretedCmd);
 
         // Handle different command types
-        if (interpretedCmd.intent === 'unknown' || interpretedCmd.confidence < 0.5) {
+        if (interpretedCmd.intent === 'unknown' || interpretedCmd.confidence < 0.4) {
           const fallbackMsg = "I didn't catch that fully. Try again, or say 'help' for examples.";
           await playAudioResponse(fallbackMsg);
           onCommand(transcribedText, fallbackMsg);
@@ -206,10 +285,16 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
           setPendingCommand(interpretedCmd);
           
           // Speak confirmation
-          await playAudioResponse(`Did you mean: ${confText}`);
+          await playAudioResponse(`Did you mean: ${confText}. Say yes to confirm, no to cancel, or say a new amount.`);
           
           // Show confirmation dialog
           setShowConfirmation(true);
+          setIsListening(false);
+          setIsProcessing(false);
+          
+          // Start listening for confirmation response
+          await listenForConfirmation();
+          return;
         } else {
           // Execute immediately (check, reset, help)
           let commandToExecute: any;
@@ -233,6 +318,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         onCommand("Error", errorMsg);
         await playAudioResponse(errorMsg);
         setIsListening(false);
+        setIsAwaitingConfirmation(false);
         setTranscribedText("");
       } finally {
         setIsProcessing(false);
@@ -289,6 +375,8 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
                 ? 'Processing your command...' 
                 : isSpeaking 
                 ? 'AI is responding...'
+                : isAwaitingConfirmation
+                ? '🎙️ Say yes, no, or new amount...'
                 : isListening
                 ? 'Listening... Speak now'
                 : 'Click or press Space to speak'}
