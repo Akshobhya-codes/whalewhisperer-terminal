@@ -299,12 +299,11 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         console.error('STT error:', sttError);
       }
 
-      const chunk = sttData || { transcript: '' };
-      const lowerTranscript = (chunk.transcript || '').toLowerCase();
-      console.log("Confirmation chunk:", lowerTranscript);
+      const transcript = (sttData?.text || '').toLowerCase();
+      console.log("Confirmation chunk:", transcript);
 
       if (confirmLoopActiveRef.current && pendingActionRef.current) {
-        const parsed = parseConfirmationResponse(lowerTranscript);
+        const parsed = parseConfirmationResponse(transcript);
 
         if (parsed.action === 'confirm') {
           console.log("🎉 Heard 'yes'!");
@@ -326,6 +325,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
             reminderTimeoutRef.current = null;
           }
 
+          console.log("Using same confirm handler as button (executePendingAction)");
           await executePendingAction();
           return;
         } else if (parsed.action === 'cancel') {
