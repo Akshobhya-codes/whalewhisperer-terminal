@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Play, Pause } from "lucide-react";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Token } from "@/types/trading";
 import {
@@ -12,12 +12,11 @@ interface MarketFeedProps {
   tokens: Token[];
   onBuy: (token: Token) => void;
   isSimulating: boolean;
-  onToggleSimulation: () => void;
   isLive: boolean;
   isLoading: boolean;
 }
 
-const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, isLoading }: MarketFeedProps) => {
+const MarketFeed = ({ tokens, onBuy, isSimulating, isLive, isLoading }: MarketFeedProps) => {
   return (
     <div className="glass-card rounded-xl p-6 h-full flex flex-col">
       <div className="flex items-center justify-between mb-6">
@@ -55,23 +54,6 @@ const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, i
             </Tooltip>
           </TooltipProvider>
         </div>
-        <Button
-          onClick={onToggleSimulation}
-          variant={isSimulating ? "destructive" : "default"}
-          className="font-orbitron"
-        >
-          {isSimulating ? (
-            <>
-              <Pause className="w-4 h-4 mr-2" />
-              Stop Simulation
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4 mr-2" />
-              Start Simulation
-            </>
-          )}
-        </Button>
       </div>
 
       <div className="flex-1 overflow-auto">
