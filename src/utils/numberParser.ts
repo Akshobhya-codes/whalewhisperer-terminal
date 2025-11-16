@@ -65,16 +65,26 @@ export function parseSpokenNumber(text: string): number | null {
 export function extractAmount(text: string): { type: 'dollars' | 'tokens', value: number } | null {
   const lowerText = text.toLowerCase();
   
-  // Check for dollar indicators
-  const hasDollar = /\$|dollar|dollars|worth|usd/.test(lowerText);
+  console.log('[Amount Extraction] Input text:', text);
+  
+  // Check for dollar indicators (more flexible pattern)
+  const hasDollar = /\$|dollar|dollars|worth|usd|bucks?/i.test(text);
+  console.log('[Amount Extraction] Has dollar indicator:', hasDollar);
   
   // Try to parse the number
   const amount = parseSpokenNumber(text);
+  console.log('[Amount Extraction] Parsed amount:', amount);
   
-  if (amount === null) return null;
+  if (amount === null) {
+    console.log('[Amount Extraction] No amount found');
+    return null;
+  }
   
-  return {
-    type: hasDollar ? 'dollars' : 'tokens',
+  const result = {
+    type: hasDollar ? 'dollars' as const : 'tokens' as const,
     value: amount
   };
+  console.log('[Amount Extraction] Result:', result);
+  
+  return result;
 }
