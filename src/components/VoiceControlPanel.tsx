@@ -422,12 +422,21 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
           await listenForConfirmation();
           return;
         } else {
-          // Execute immediately (check, reset, help)
-          let commandToExecute: any;
+          // Execute immediately (check, reset)
+          let commandToExecute: any | undefined;
           if (interpretedCmd.intent === 'check') {
             commandToExecute = { action: 'check' };
           } else if (interpretedCmd.intent === 'reset') {
             commandToExecute = { action: 'reset' };
+          }
+
+          if (!commandToExecute) {
+            const msg = "I didn't catch that fully. Try again, or say 'help' for examples.";
+            await playAudioResponse(msg);
+            onCommand(transcribedText, msg);
+            setIsListening(false);
+            setIsProcessing(false);
+            return;
           }
 
           onExecuteCommand(commandToExecute);
