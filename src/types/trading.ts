@@ -2,10 +2,12 @@ export interface Token {
   id: string;
   name: string;
   symbol: string;
-  displayName: string; // Phonetically distinct name for voice commands
+  displayName: string;
   price: number;
   change24h: number;
   volume: number;
+  isExtremeMove?: boolean;
+  marketCap?: number;
 }
 
 export interface Holding {

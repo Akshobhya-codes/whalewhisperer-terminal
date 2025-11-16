@@ -125,12 +125,28 @@ export const useMarketData = () => {
   const simulatePriceChange = () => {
     setTokens((prevTokens) =>
       prevTokens.map((token) => {
-        const changePercent = (Math.random() - 0.5) * 10;
+        // Variable volatility between 2% and 20%
+        const baseVolatility = 2 + Math.random() * 18;
+        
+        // 5% chance of micro-crash or micro-pump
+        const extremeEvent = Math.random() < 0.05;
+        let changePercent: number;
+        
+        if (extremeEvent) {
+          // Micro-crash (-15% to -25%) or micro-pump (+15% to +25%)
+          const isCrash = Math.random() < 0.5;
+          changePercent = isCrash ? -(15 + Math.random() * 10) : (15 + Math.random() * 10);
+        } else {
+          // Normal volatility
+          changePercent = (Math.random() - 0.5) * baseVolatility;
+        }
+        
         const newPrice = token.price * (1 + changePercent / 100);
         return {
           ...token,
           price: newPrice,
           change24h: token.change24h + changePercent * 0.5,
+          isExtremeMove: extremeEvent,
         };
       })
     );

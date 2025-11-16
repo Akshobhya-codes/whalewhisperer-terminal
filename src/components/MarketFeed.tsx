@@ -25,6 +25,11 @@ const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, i
           <h2 className="text-xl font-orbitron font-bold text-foreground">
             🔥 Market Feed
           </h2>
+          {isSimulating && (
+            <span className="text-xs bg-destructive/20 text-destructive px-2 py-1 rounded animate-pulse">
+              🔥 Volatile Mode ON
+            </span>
+          )}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
@@ -73,13 +78,20 @@ const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, i
           {tokens.map((token) => (
             <div
               key={token.id}
-              className="glass-card rounded-lg p-4 hover:glow-cyan transition-all duration-300 group"
+              className={`glass-card rounded-lg p-4 hover:glow-cyan transition-all duration-300 group ${
+                token.isExtremeMove 
+                  ? token.change24h > 0 
+                    ? 'animate-pulse bg-green-500/10 border-green-500/30' 
+                    : 'animate-pulse bg-red-500/10 border-red-500/30'
+                  : ''
+              }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="font-orbitron font-semibold text-foreground">
                       {token.displayName}
+                      {token.isExtremeMove && (token.change24h > 0 ? ' 🚀' : ' 💥')}
                     </h3>
                     <span className="text-xs text-muted-foreground font-inter">
                       ({token.symbol})
@@ -92,7 +104,9 @@ const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, i
                     </div>
 
                     <div
-                      className={`flex items-center gap-1 text-sm font-inter ${
+                      className={`flex items-center gap-1 ${
+                        token.isExtremeMove ? 'text-lg font-bold' : 'text-sm'
+                      } font-inter ${
                         token.change24h >= 0 ? "text-success" : "text-destructive"
                       }`}
                     >
