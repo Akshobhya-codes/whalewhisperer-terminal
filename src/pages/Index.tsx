@@ -81,11 +81,26 @@ const Index = () => {
   }, [toast]);
 
   const handleExecuteVoiceCommand = useCallback(async (command: ParsedCommand) => {
+    console.log('🔥 handleExecuteVoiceCommand called with:', command);
+    
     switch (command.action) {
       case 'buy': {
-        if (!command.token) break;
+        console.log('🔥 BUY action - command.token:', command.token);
+        
+        if (!command.token) {
+          console.error('❌ No token specified');
+          toast({ title: "Error", description: "No token specified", variant: "destructive" });
+          break;
+        }
+        
         const token = tokens.find(t => t.symbol === command.token);
-        if (!token) break;
+        console.log('🔥 Found token:', token);
+        
+        if (!token) {
+          console.error('❌ Token not found:', command.token);
+          toast({ title: "Error", description: `Token ${command.token} not found`, variant: "destructive" });
+          break;
+        }
 
         let amount = 0;
         if (command.amount) {
@@ -93,13 +108,24 @@ const Index = () => {
         } else if (command.quantity) {
           amount = command.quantity * token.price;
         } else {
+          console.error('❌ No amount or quantity specified');
+          toast({ title: "Error", description: "No amount specified", variant: "destructive" });
           break;
         }
 
-        if (amount > balance) break;
+        console.log('🔥 Amount:', amount, 'Balance:', balance);
+        
+        if (amount > balance) {
+          console.error('❌ Insufficient balance');
+          toast({ title: "Error", description: "Insufficient balance", variant: "destructive" });
+          break;
+        }
 
         const quantity = amount / token.price;
+        console.log('🔥 Quantity:', quantity);
+        
         const existingHolding = holdings.find((h) => h.tokenId === token.id);
+        console.log('🔥 Existing holding:', existingHolding);
 
         if (existingHolding) {
           const totalQuantity = existingHolding.quantity + quantity;
@@ -115,6 +141,7 @@ const Index = () => {
                 : h
             )
           );
+          console.log('🔥 Saving updated holding:', updatedHolding);
           await saveHolding(updatedHolding);
         } else {
           const newHolding = {
@@ -126,12 +153,23 @@ const Index = () => {
             buyPrice: token.price,
             currentPrice: token.price,
           };
+          console.log('🔥 Saving new holding:', newHolding);
           setHoldings((prev) => [...prev, newHolding]);
           await saveHolding(newHolding);
         }
 
+        console.log('🔥 Updating balance from', balance, 'to', balance - amount);
         setBalance((prev) => prev - amount);
+        
+        console.log('🔥 Saving trade...');
         await saveTrade('buy', token.symbol, token.displayName, quantity, token.price, amount);
+        
+        console.log('✅ BUY completed successfully!');
+        toast({ 
+          title: "✅ Purchase Successful", 
+          description: `Bought ${quantity.toFixed(4)} ${token.displayName} for $${amount.toFixed(2)}`,
+          className: "bg-success/10 border-success/50"
+        });
         break;
       }
 
