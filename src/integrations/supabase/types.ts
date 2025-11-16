@@ -50,13 +50,6 @@ export type Database = {
             foreignKeyName: "challenges_creator_id_fkey"
             columns: ["creator_id"]
             isOneToOne: false
-            referencedRelation: "leaderboard"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "challenges_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -94,13 +87,6 @@ export type Database = {
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_members_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "leaderboard"
             referencedColumns: ["id"]
           },
           {
@@ -146,13 +132,6 @@ export type Database = {
             foreignKeyName: "group_messages_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "leaderboard"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_messages_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -181,13 +160,6 @@ export type Database = {
           name?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "groups_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "leaderboard"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "groups_creator_id_fkey"
             columns: ["creator_id"]
@@ -226,13 +198,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "holdings_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "leaderboard"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "holdings_user_id_fkey"
             columns: ["user_id"]
@@ -308,13 +273,6 @@ export type Database = {
             foreignKeyName: "trades_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "leaderboard"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "trades_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -322,20 +280,21 @@ export type Database = {
       }
     }
     Views: {
-      leaderboard: {
-        Row: {
-          avatar_url: string | null
-          id: string | null
-          last_trade_time: string | null
-          pl_percentage: number | null
-          portfolio_value: number | null
-          total_pl: number | null
-          username: string | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
+      get_leaderboard: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          id: string
+          last_trade_time: string
+          pl_percentage: number
+          portfolio_value: number
+          total_pl: number
+          username: string
+        }[]
+      }
       get_user_portfolio_stats: {
         Args: { user_uuid: string }
         Returns: {
