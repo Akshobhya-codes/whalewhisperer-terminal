@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useMarketData } from "@/hooks/useMarketData";
+import { useAuth } from "@/hooks/useAuth";
+import { usePortfolio } from "@/hooks/usePortfolio";
 import Navbar from "@/components/Navbar";
 import MarketFeed from "@/components/MarketFeed";
 import Portfolio from "@/components/Portfolio";
@@ -12,12 +14,20 @@ import SellModal from "@/components/SellModal";
 import { Token, Holding, VoiceLog } from "@/types/trading";
 import { ParsedCommand } from "@/utils/voiceCommands";
 
-const INITIAL_BALANCE = 10000;
-
 const Index = () => {
-  const [balance, setBalance] = useState(INITIAL_BALANCE);
+  const { user, loading: authLoading, requireAuth } = useAuth();
   const { tokens, isLive, isLoading, simulatePriceChange } = useMarketData();
-  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const {
+    balance,
+    setBalance,
+    holdings,
+    setHoldings,
+    loading: portfolioLoading,
+    saveHolding,
+    deleteHolding,
+    saveTrade,
+    resetPortfolio,
+  } = usePortfolio(user?.id);
   const [isSimulating, setIsSimulating] = useState(false);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
@@ -25,6 +35,10 @@ const Index = () => {
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
   const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>([]);
   const { toast } = useToast();
+
+  useEffect(() => {
+    requireAuth();
+  }, [user, authLoading]);
 
   // Update holdings with current prices
   useEffect(() => {
@@ -66,7 +80,7 @@ const Index = () => {
     });
   }, [toast]);
 
-  const handleExecuteVoiceCommand = useCallback((command: ParsedCommand) => {
+  const handleExecuteVoiceCommand = useCallback(async (command: ParsedCommand) => {
     switch (command.action) {
       case 'buy': {
         if (!command.token) break;
@@ -93,29 +107,31 @@ const Index = () => {
             (existingHolding.buyPrice * existingHolding.quantity + token.price * quantity) /
             totalQuantity;
 
+          const updatedHolding = { ...existingHolding, quantity: totalQuantity, buyPrice: newAvgPrice };
           setHoldings((prev) =>
             prev.map((h) =>
               h.tokenId === token.id
-                ? { ...h, quantity: totalQuantity, buyPrice: newAvgPrice }
+                ? updatedHolding
                 : h
             )
           );
+          await saveHolding(updatedHolding);
         } else {
-          setHoldings((prev) => [
-            ...prev,
-            {
-              tokenId: token.id,
-              tokenName: token.name,
-              symbol: token.symbol,
-              displayName: token.displayName,
-              quantity,
-              buyPrice: token.price,
-              currentPrice: token.price,
-            },
-          ]);
+          const newHolding = {
+            tokenId: token.id,
+            tokenName: token.name,
+            symbol: token.symbol,
+            displayName: token.displayName,
+            quantity,
+            buyPrice: token.price,
+            currentPrice: token.price,
+          };
+          setHoldings((prev) => [...prev, newHolding]);
+          await saveHolding(newHolding);
         }
 
         setBalance((prev) => prev - amount);
+        await saveTrade('buy', token.symbol, token.displayName, quantity, token.price, amount);
         break;
       }
 
@@ -128,35 +144,38 @@ const Index = () => {
         
         if (quantity === holding.quantity) {
           setHoldings((prev) => prev.filter((h) => h.tokenId !== holding.tokenId));
+          await deleteHolding(holding.symbol);
         } else {
+          const updatedHolding = { ...holding, quantity: holding.quantity - quantity };
           setHoldings((prev) =>
             prev.map((h) =>
               h.tokenId === holding.tokenId
-                ? { ...h, quantity: h.quantity - quantity }
+                ? updatedHolding
                 : h
             )
           );
+          await saveHolding(updatedHolding);
         }
 
         const usdReceived = quantity * holding.currentPrice;
         setBalance((prev) => prev + usdReceived);
+        await saveTrade('sell', holding.symbol, holding.displayName, quantity, holding.currentPrice, usdReceived);
         break;
       }
 
       case 'reset': {
-        setBalance(INITIAL_BALANCE);
-        setHoldings([]);
+        await resetPortfolio();
         break;
       }
     }
-  }, [tokens, holdings, balance]);
+  }, [tokens, holdings, balance, saveHolding, deleteHolding, saveTrade, resetPortfolio]);
 
   const handleBuy = (token: Token) => {
     setSelectedToken(token);
     setIsBuyModalOpen(true);
   };
 
-  const handleConfirmBuy = (amount: number) => {
+  const handleConfirmBuy = async (amount: number) => {
     if (!selectedToken || amount > balance) return;
 
     const quantity = amount / selectedToken.price;
@@ -168,29 +187,31 @@ const Index = () => {
         (existingHolding.buyPrice * existingHolding.quantity + selectedToken.price * quantity) /
         totalQuantity;
 
+      const updatedHolding = { ...existingHolding, quantity: totalQuantity, buyPrice: newAvgPrice };
       setHoldings((prev) =>
         prev.map((h) =>
           h.tokenId === selectedToken.id
-            ? { ...h, quantity: totalQuantity, buyPrice: newAvgPrice }
+            ? updatedHolding
             : h
         )
       );
+      await saveHolding(updatedHolding);
     } else {
-      setHoldings((prev) => [
-        ...prev,
-        {
-          tokenId: selectedToken.id,
-          tokenName: selectedToken.name,
-          symbol: selectedToken.symbol,
-          displayName: selectedToken.displayName,
-          quantity,
-          buyPrice: selectedToken.price,
-          currentPrice: selectedToken.price,
-        },
-      ]);
+      const newHolding = {
+        tokenId: selectedToken.id,
+        tokenName: selectedToken.name,
+        symbol: selectedToken.symbol,
+        displayName: selectedToken.displayName,
+        quantity,
+        buyPrice: selectedToken.price,
+        currentPrice: selectedToken.price,
+      };
+      setHoldings((prev) => [...prev, newHolding]);
+      await saveHolding(newHolding);
     }
 
     setBalance((prev) => prev - amount);
+    await saveTrade('buy', selectedToken.symbol, selectedToken.displayName, quantity, selectedToken.price, amount);
     toast({
       title: "Purchase Successful! 🚀",
       description: `Bought ${quantity.toLocaleString()} ${selectedToken.symbol} for $${amount.toFixed(2)}`,
@@ -202,7 +223,7 @@ const Index = () => {
     setIsSellModalOpen(true);
   };
 
-  const handleConfirmSell = (quantity: number) => {
+  const handleConfirmSell = async (quantity: number) => {
     if (!selectedHolding) return;
 
     const usdReceived = quantity * selectedHolding.currentPrice;
@@ -210,17 +231,21 @@ const Index = () => {
 
     if (quantity === selectedHolding.quantity) {
       setHoldings((prev) => prev.filter((h) => h.tokenId !== selectedHolding.tokenId));
+      await deleteHolding(selectedHolding.symbol);
     } else {
+      const updatedHolding = { ...selectedHolding, quantity: selectedHolding.quantity - quantity };
       setHoldings((prev) =>
         prev.map((h) =>
           h.tokenId === selectedHolding.tokenId
-            ? { ...h, quantity: h.quantity - quantity }
+            ? updatedHolding
             : h
         )
       );
+      await saveHolding(updatedHolding);
     }
 
     setBalance((prev) => prev + usdReceived);
+    await saveTrade('sell', selectedHolding.symbol, selectedHolding.displayName, quantity, selectedHolding.currentPrice, usdReceived);
     toast({
       title: pl >= 0 ? "Profit Secured! 💰" : "Sale Completed",
       description: `Sold ${quantity.toLocaleString()} ${selectedHolding.symbol} for $${usdReceived.toFixed(2)} (${pl >= 0 ? '+' : ''}$${pl.toFixed(2)} P/L)`,
@@ -228,14 +253,20 @@ const Index = () => {
     });
   };
 
-  const handleReset = () => {
-    setBalance(INITIAL_BALANCE);
-    setHoldings([]);
-    toast({
-      title: "Portfolio Reset 🔄",
-      description: "Your balance has been restored to $10,000",
-    });
+  const handleReset = async () => {
+    await resetPortfolio();
   };
+
+  if (authLoading || portfolioLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5">
+        <div className="text-center space-y-4">
+          <div className="text-6xl animate-pulse-slow">🐳</div>
+          <h2 className="text-2xl font-orbitron text-primary">Loading WhaleWhisperer...</h2>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
