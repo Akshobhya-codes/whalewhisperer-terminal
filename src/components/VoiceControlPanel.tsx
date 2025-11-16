@@ -182,7 +182,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
           setIsListening(false);
           await handleCommandCancel();
         }
-      }, 8000); // 8 seconds to respond
+      }, 15000); // 15 seconds to respond
 
     } catch (error) {
       console.error('Failed to start confirmation listening:', error);
@@ -405,7 +405,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         confirmationText={confirmationText}
         onConfirm={handleCommandConfirm}
         onCancel={handleCommandCancel}
-        timeout={5}
+        timeout={15}
       />
     </>
   );
