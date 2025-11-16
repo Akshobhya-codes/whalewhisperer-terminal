@@ -1,73 +1,52 @@
-# Welcome to your Lovable project
+# 🐳 WhaleWhisperer – Social Voice-Trading Game
 
-## Project info
+### Make friends. Build groups. Outsmart the market (and your buddies).
 
-**URL**: https://lovable.dev/projects/3e64c982-f7fa-423d-9687-ee83dbcf2746
+**WhaleWhisperer** turns meme-coin trading into a **multiplayer, voice-driven competition**.  
+Use your voice to buy, sell, and roast — then watch your P/L move on the **group leaderboard** as you battle friends for the top spot.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## 🌊 Core Idea
 
-**Use Lovable**
+A *social trading arena* where:
+- Every player starts with $10 000 virtual USD.  
+- You trade six original, volatile meme coins by voice.  
+- Each trade instantly updates your **portfolio, P/L, and rank**.  
+- You can form **friend groups**, spectate each other, and launch mini-tournaments.  
+- The AI whale cheers winners and roasts losers — all through real speech.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/3e64c982-f7fa-423d-9687-ee83dbcf2746) and start prompting.
+---
 
-Changes made via Lovable will be committed automatically to this repo.
+## 💫 Features
 
-**Use your preferred IDE**
+| Category | Highlights |
+|-----------|-------------|
+| **Social Gameplay** | 👥 Create or join groups with invite codes.  <br>🏆 Group & global leaderboards update live.  <br>👀 Spectate a friend’s dashboard in real time. |
+| **Voice Control** | 🎙 Buy / sell / check risk / chat — all spoken through Hathora Voice AI. |
+| **Meme Market** | 💸 Custom fake coins: `Blop`, `Zuga`, `Floop`, `Toku`, `Rambo`, `Mika`, each with chaotic volatility. |
+| **Analytics** | 📈 True market-style P/L math and an AI risk-gauge meter. |
+| **Entertainment** | 😂 Voice taunts & compliments depending on your trades. |
+| **Design** | 🌌 Cyberpunk glass UI with neon gradients and animated waves. |
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+---
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## 🧩 Tech Stack
 
-Follow these steps:
+| Layer | Technology |
+|-------|-------------|
+| Frontend | **Lovable** (React-like builder) |
+| Voice AI | **Hathora Voice API** |
+| Auth + DB | **Lovable Cloud** (users, groups, leaderboard) |
+| Simulation | Custom JavaScript volatility engine |
+| Hosting | Lovable Deploy / Vercel |
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+---
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## 🛠 Quick Start
 
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+git clone https://github.com/yourusername/whalewhisperer-social-trading.git
+cd whalewhisperer-social-trading
+npm install
 npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/3e64c982-f7fa-423d-9687-ee83dbcf2746) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
