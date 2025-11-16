@@ -34,7 +34,7 @@ const Index = () => {
     saveTrade,
     resetPortfolio,
   } = usePortfolio(user?.id);
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [isSimulating] = useState(true); // Always simulating
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [isSellModalOpen, setIsSellModalOpen] = useState(false);
   const [isSpectateModalOpen, setIsSpectateModalOpen] = useState(false);
@@ -97,10 +97,9 @@ const Index = () => {
   }, [tokens]);
 
   useEffect(() => {
-    if (!isSimulating) return;
     const interval = setInterval(() => { simulatePriceChange(); }, 30000);
     return () => clearInterval(interval);
-  }, [isSimulating, simulatePriceChange]);
+  }, [simulatePriceChange]);
 
   const handleVoiceCommand = useCallback((userText: string, aiResponse: string) => {
     setVoiceLogs((prev) => [{ id: Date.now().toString(), timestamp: new Date(), userText, aiResponse }, ...prev]);
@@ -216,7 +215,7 @@ const Index = () => {
       <main className="flex-1 max-w-[1800px] mx-auto w-full p-6">
         <div className="flex justify-end mb-4">{!spectateMode && <Button onClick={() => setIsSpectateModalOpen(true)} variant="outline"><Eye className="mr-2 h-4 w-4" />👀 Spectate Friend</Button>}</div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <div className="lg:col-span-2"><MarketFeed tokens={tokens} onBuy={spectateMode ? () => {} : handleBuy} isSimulating={isSimulating} onToggleSimulation={() => !spectateMode && setIsSimulating(!isSimulating)} isLive={isLive} isLoading={isLoading} /></div>
+          <div className="lg:col-span-2"><MarketFeed tokens={tokens} onBuy={spectateMode ? () => {} : handleBuy} isSimulating={isSimulating} isLive={isLive} isLoading={isLoading} /></div>
           <div className="space-y-6">
             {!spectateMode && <RiskGauge holdings={holdings} tokens={tokens} balance={balance} />}
             <VoiceControlPanel onCommand={handleVoiceCommand} tokens={tokens} holdings={spectateMode ? spectateHoldings : holdings} balance={spectateMode ? spectateBalance : balance} onExecuteCommand={handleExecuteVoiceCommand} />
