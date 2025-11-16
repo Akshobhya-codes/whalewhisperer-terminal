@@ -211,25 +211,26 @@ export function interpretCommand(text: string, tokens: Token[]): InterpretedComm
 
 // Generate human-readable confirmation text
 export function generateConfirmationText(command: InterpretedCommand): string {
-  const displayName = command.tokenDisplayName || command.tokenSymbol;
+  const name = command.tokenDisplayName || command.tokenSymbol || '';
+  const dual = command.tokenSymbol && name && name !== command.tokenSymbol ? `${name} (${command.tokenSymbol})` : name;
   
   if (command.intent === 'buy') {
     if (command.amountType === 'dollars' && command.amount) {
-      return `Buy $${command.amount} worth of ${displayName}?`;
+      return `Buy $${command.amount} worth of ${dual}?`;
     } else if (command.amountType === 'tokens' && command.amount) {
-      return `Buy ${command.amount} tokens of ${displayName}?`;
+      return `Buy ${command.amount} tokens of ${dual}?`;
     } else {
-      return `Buy ${displayName}? How much?`;
+      return `Buy ${dual}? How much?`;
     }
   }
 
   if (command.intent === 'sell') {
     if (command.quantity === 'all') {
-      return `Sell all your ${displayName}?`;
+      return `Sell all your ${dual}?`;
     } else if (command.amount) {
-      return `Sell ${command.amount} ${displayName}?`;
+      return `Sell ${command.amount} ${dual}?`;
     } else {
-      return `Sell ${displayName}? How much?`;
+      return `Sell ${dual}? How much?`;
     }
   }
 

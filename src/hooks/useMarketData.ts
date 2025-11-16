@@ -9,22 +9,31 @@ const MEME_COINS = [
   "WIF", "PEPE2", "WOJAK", "TURBO", "MEME"
 ];
 
-// Generate phonetically distinct display names
-const generateDisplayName = (symbol: string, name: string): string => {
-  const displayNames: Record<string, string> = {
-    'PEPE': 'Pepper',
-    'DOGE': 'Dojo',
-    'SHIB': 'Shibu',
-    'FLOKI': 'Floki',
-    'BONK': 'Banker',
-    'WIF': 'Wiffy',
-    'PEPE2': 'Papaya',
-    'WOJAK': 'Wojack',
-    'TURBO': 'Turbo',
-    'MEME': 'Mimo',
+// Generate phonetically distinct display names (stable per token id)
+const generateDisplayName = (symbol: string, name: string, id?: string): string => {
+  // Pool of aliases per common symbol to avoid collisions
+  const pools: Record<string, string[]> = {
+    PEPE: ["Pepper", "Piper", "Peppy", "Pebble", "Poppy", "Peepo", "Pepo"],
+    DOGE: ["Dojo", "Dodger", "Dozie", "Doja", "Dozy"],
+    SHIB: ["Shibu", "Shiba", "Shibo", "Shivu", "Shivy"],
+    FLOKI: ["Floki", "Floky", "Flora", "Floro"],
+    BONK: ["Banker", "Bonker", "Bonnie", "Bongo"],
+    WIF: ["Wiffy", "Whiffy", "Wiffy Hat", "Wifer"],
+    PEPE2: ["Papaya", "Pepper Two", "Peppy Two"],
+    WOJAK: ["Wojack", "Wozak", "Wajak"],
+    TURBO: ["Turbo", "Turbine", "Torb"],
+    MEME: ["Mimo", "Mimi", "Memo"],
   };
-  
-  return displayNames[symbol] || name;
+
+  const pool = pools[symbol] || [];
+  if (pool.length === 0) return name || symbol;
+
+  // Deterministic index based on id fallback to name+symbol
+  const key = (id || `${name}:${symbol}`);
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  const idx = hash % pool.length;
+  return pool[idx];
 };
 
 const FALLBACK_TOKENS: Token[] = [
@@ -68,10 +77,11 @@ export const useMarketData = () => {
           .map((pair: any, index: number) => {
             const symbol = pair.baseToken?.symbol || "???";
             const name = pair.baseToken?.name || "Unknown";
-            // Generate phonetically distinct display names
-            const displayName = generateDisplayName(symbol, name);
+            const id = pair.pairAddress || String(index + 1);
+            // Generate phonetically distinct display names (stable per id)
+            const displayName = generateDisplayName(symbol, name, id);
             return {
-              id: pair.pairAddress || String(index + 1),
+              id,
               name,
               symbol,
               displayName,
