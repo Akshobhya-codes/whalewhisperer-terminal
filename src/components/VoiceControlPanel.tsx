@@ -8,6 +8,7 @@ import WaveformVisualizer from "./WaveformVisualizer";
 import ConfirmationDialog from "./ConfirmationDialog";
 import { Badge } from "@/components/ui/badge";
 import { interpretCommand, generateConfirmationText, parseConfirmationResponse, InterpretedCommand } from "@/utils/intelligentCommandParser";
+import { useToast } from "@/hooks/use-toast";
 
 interface VoiceControlPanelProps {
   onCommand: (userText: string, aiResponse: string) => void;
@@ -18,6 +19,7 @@ interface VoiceControlPanelProps {
 }
 
 const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteCommand }: VoiceControlPanelProps) => {
+  const { toast } = useToast();
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -142,7 +144,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
 
     try {
       // Map interpreted command to old command format
-      let commandToExecute: any;
+      let commandToExecute: any | undefined;
 
       if (cmdToExecute.intent === 'buy') {
         if (!cmdToExecute.amount || !cmdToExecute.tokenSymbol) {
@@ -169,13 +171,41 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         commandToExecute = { action: 'reset' };
       }
 
+      if (!commandToExecute) {
+        throw new Error(`Unsupported command intent: ${cmdToExecute.intent}`);
+      }
+
+      console.log('Executing command:', commandToExecute);
+
       // Execute command
       onExecuteCommand(commandToExecute);
 
+      // Show success toast
+      let toastTitle = "✅ Trade Executed";
+      let toastDescription = "";
+      if (cmdToExecute.intent === 'buy') {
+        toastDescription = `Bought ${cmdToExecute.amountType === 'dollars' ? `$${cmdToExecute.amount}` : `${cmdToExecute.amount} tokens`} of ${cmdToExecute.tokenDisplayName || cmdToExecute.tokenSymbol}`;
+      } else if (cmdToExecute.intent === 'sell') {
+        toastDescription = `Sold ${cmdToExecute.quantity === 'all' ? 'all' : cmdToExecute.amount} ${cmdToExecute.tokenDisplayName || cmdToExecute.tokenSymbol}`;
+      } else if (cmdToExecute.intent === 'check') {
+        toastTitle = "📊 Portfolio Check";
+        toastDescription = "Checking your holdings";
+      } else if (cmdToExecute.intent === 'reset') {
+        toastTitle = "🔄 Portfolio Reset";
+        toastDescription = "Your portfolio has been reset";
+      }
+
+      toast({
+        title: toastTitle,
+        description: toastDescription,
+        duration: 3000,
+        className: "bg-success/10 border-success/50 animate-scale-in"
+      });
+
       // Generate success response
       const successText = modifiedCommand 
-        ? `Updated! ${generateConfirmationText(modifiedCommand).replace('?', '.')}` 
-        : `Done! ${confirmationText.replace('?', '.')}`;
+        ? `Trade executed! ${generateConfirmationText(modifiedCommand).replace('?', '.')}` 
+        : `Trade executed! ${confirmationText.replace('?', '.')}`;
       await playAudioResponse(successText);
       onCommand(cmdToExecute.rawText, successText);
 
@@ -507,18 +537,18 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
           <div className="text-center">
             <p className="text-sm text-muted-foreground mb-2">
               {isProcessing 
-                ? 'Processing your command...' 
+                ? '⚙️ Processing your command...' 
                 : isSpeaking 
-                ? 'AI is responding...'
+                ? '🔊 AI is responding...'
                 : isAwaitingConfirmation
-                ? '🎙️ Say yes, no, or new amount...'
+                ? '🎙️ Listening for your confirmation (say yes or no)...'
                 : isListening
-                ? 'Listening... Speak now'
-                : 'Click or press Space to speak'}
+                ? '🎙️ Listening... Speak now'
+                : '💬 Click or press Space to speak'}
             </p>
             {transcribedText && (
-              <p className="text-sm font-medium animate-fade-in">
-                {transcribedText}
+              <p className="text-sm font-medium animate-fade-in text-primary">
+                "{transcribedText}"
               </p>
             )}
           </div>

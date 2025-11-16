@@ -55,25 +55,28 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary animate-pulse" />
-            Voice Confirmation ({timeLeft}s)
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <Clock className="h-6 w-6 text-primary animate-pulse" />
+            🎤 Voice Confirmation
+            <span className="ml-auto text-sm font-normal text-muted-foreground">
+              {timeLeft}s remaining
+            </span>
           </DialogTitle>
-          <DialogDescription>
-            Speak or click to respond
+          <DialogDescription className="text-base">
+            Speak "yes" or "no", or click the buttons below
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-6">
-          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-4">
+          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-4 animate-fade-in">
             <p className="text-lg font-semibold text-center">
               {confirmationText}
             </p>
           </div>
 
-          <div className="bg-accent/20 border border-accent/30 rounded-lg p-3 mb-4">
+          <div className="bg-accent/20 border border-accent/30 rounded-lg p-3 mb-4 animate-fade-in">
             <p className="text-sm text-center">
-              🎙️ <strong>Speak to respond:</strong> Say "yes", "no", or change the amount
+              🎙️ <strong>Speak or click to respond:</strong> Say "yes" or "no", or click the buttons below
             </p>
           </div>
 
@@ -92,21 +95,23 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
           </div>
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
+        <DialogFooter className="flex-col sm:flex-row gap-3 pt-2">
           <Button
             variant="outline"
             onClick={onCancel}
-            className="flex-1"
+            size="lg"
+            className="flex-1 border-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive transition-all"
           >
-            <X className="h-4 w-4 mr-2" />
-            No, Cancel
+            <X className="h-5 w-5 mr-2" />
+            ❌ No, Cancel
           </Button>
           <Button
             onClick={onConfirm}
-            className="flex-1 bg-primary hover:bg-primary/90"
+            size="lg"
+            className="flex-1 bg-success hover:bg-success/90 text-success-foreground font-bold shadow-lg shadow-success/50 hover:shadow-success/70 transition-all animate-pulse border-2 border-success"
           >
-            <Check className="h-4 w-4 mr-2" />
-            Yes, Execute ({timeLeft}s)
+            <Check className="h-5 w-5 mr-2" />
+            ✅ Yes, Execute
           </Button>
         </DialogFooter>
       </DialogContent>
