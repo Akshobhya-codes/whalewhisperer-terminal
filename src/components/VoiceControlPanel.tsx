@@ -326,7 +326,6 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
             reminderTimeoutRef.current = null;
           }
 
-          await playAudioResponse("Confirmed by voice. Executing trade now.");
           await executePendingAction();
           return;
         } else if (parsed.action === 'cancel') {
