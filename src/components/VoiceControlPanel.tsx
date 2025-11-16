@@ -2,11 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AudioRecorder, blobToBase64, base64ToAudioUrl } from "@/utils/audioRecorder";
-import { parseVoiceCommand, generateAIResponse } from "@/utils/voiceCommands";
 import { supabase } from "@/integrations/supabase/client";
 import { Token, Holding } from "@/types/trading";
 import WaveformVisualizer from "./WaveformVisualizer";
+import ConfirmationDialog from "./ConfirmationDialog";
 import { Badge } from "@/components/ui/badge";
+import { interpretCommand, generateConfirmationText, InterpretedCommand } from "@/utils/intelligentCommandParser";
 
 interface VoiceControlPanelProps {
   onCommand: (userText: string, aiResponse: string) => void;
@@ -21,14 +22,17 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcribedText, setTranscribedText] = useState("");
+  const [pendingCommand, setPendingCommand] = useState<InterpretedCommand | null>(null);
+  const [confirmationText, setConfirmationText] = useState("");
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Hotkey support (Space bar)
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Only activate on Space if not typing in an input
-      if (e.code === 'Space' && !isProcessing && e.target === document.body) {
+      // Only activate on Space if not typing in an input and no modal open
+      if (e.code === 'Space' && !isProcessing && !showConfirmation && e.target === document.body) {
         e.preventDefault();
         handleVoiceCommand();
       }
@@ -36,7 +40,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isListening, isProcessing]);
+  }, [isListening, isProcessing, showConfirmation]);
 
   // Track audio playback for speaking state
   useEffect(() => {
@@ -57,6 +61,94 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
       audio.removeEventListener('pause', handlePause);
     };
   }, []);
+
+  const playAudioResponse = async (text: string) => {
+    try {
+      const { data: ttsData, error: ttsError } = await supabase.functions.invoke('hathora-tts', {
+        body: { text, voice: 'af_bella', speed: 1.1 }
+      });
+
+      if (ttsError || !ttsData?.audioContent) {
+        console.error('TTS error:', ttsError);
+        return;
+      }
+
+      const audioUrl = base64ToAudioUrl(ttsData.audioContent);
+      if (!audioRef.current) {
+        audioRef.current = new Audio();
+      }
+      audioRef.current.src = audioUrl;
+      await audioRef.current.play();
+    } catch (error) {
+      console.error('Audio playback error:', error);
+    }
+  };
+
+  const handleCommandConfirm = async () => {
+    if (!pendingCommand) return;
+
+    setShowConfirmation(false);
+    setIsProcessing(true);
+
+    try {
+      // Map interpreted command to old command format
+      let commandToExecute: any;
+
+      if (pendingCommand.intent === 'buy') {
+        if (!pendingCommand.amount || !pendingCommand.tokenSymbol) {
+          throw new Error('Missing amount or token for buy command');
+        }
+        commandToExecute = {
+          action: 'buy',
+          token: pendingCommand.tokenSymbol,
+          amount: pendingCommand.amountType === 'dollars' ? pendingCommand.amount : undefined,
+          quantity: pendingCommand.amountType === 'tokens' ? pendingCommand.amount : undefined
+        };
+      } else if (pendingCommand.intent === 'sell') {
+        if (!pendingCommand.tokenSymbol) {
+          throw new Error('Missing token for sell command');
+        }
+        commandToExecute = {
+          action: 'sell',
+          token: pendingCommand.tokenSymbol,
+          quantity: pendingCommand.quantity === 'all' ? 'all' : pendingCommand.amount
+        };
+      } else if (pendingCommand.intent === 'check') {
+        commandToExecute = { action: 'check' };
+      } else if (pendingCommand.intent === 'reset') {
+        commandToExecute = { action: 'reset' };
+      }
+
+      // Execute command
+      onExecuteCommand(commandToExecute);
+
+      // Generate success response
+      const aiResponse = `Done! ${confirmationText.replace('?', '.')}`;
+      await playAudioResponse(aiResponse);
+      onCommand(pendingCommand.rawText, aiResponse);
+
+    } catch (error) {
+      console.error('Command execution error:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to execute command';
+      await playAudioResponse(errorMsg);
+      onCommand(pendingCommand.rawText, errorMsg);
+    } finally {
+      setIsProcessing(false);
+      setPendingCommand(null);
+      setTranscribedText("");
+    }
+  };
+
+  const handleCommandCancel = async () => {
+    setShowConfirmation(false);
+    const cancelMsg = "Command cancelled.";
+    await playAudioResponse(cancelMsg);
+    if (pendingCommand) {
+      onCommand(pendingCommand.rawText, cancelMsg);
+    }
+    setPendingCommand(null);
+    setTranscribedText("");
+  };
 
   const handleVoiceCommand = async () => {
     if (isListening) {
@@ -82,48 +174,64 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         console.log('Transcribed:', transcribedText);
         setTranscribedText(transcribedText);
 
-        // Parse command
-        const command = parseVoiceCommand(transcribedText);
-        console.log('Parsed command:', command);
+        // Interpret command intelligently
+        const interpretedCmd = interpretCommand(transcribedText, tokens);
+        console.log('Interpreted command:', interpretedCmd);
 
-        // Execute command
-        let success = true;
-        try {
-          onExecuteCommand(command);
-        } catch (error) {
-          console.error('Command execution error:', error);
-          success = false;
+        // Handle different command types
+        if (interpretedCmd.intent === 'unknown' || interpretedCmd.confidence < 0.5) {
+          const fallbackMsg = "I didn't catch that fully. Try again, or say 'help' for examples.";
+          await playAudioResponse(fallbackMsg);
+          onCommand(transcribedText, fallbackMsg);
+          setTranscribedText("");
+          setIsListening(false);
+          setIsProcessing(false);
+          return;
         }
 
-        // Generate AI response
-        const aiResponse = generateAIResponse(command, tokens, holdings, balance, success);
-        console.log('AI response:', aiResponse);
-
-        // Send to Hathora TTS
-        const { data: ttsData, error: ttsError } = await supabase.functions.invoke('hathora-tts', {
-          body: { text: aiResponse, voice: 'af_bella', speed: 1.1 }
-        });
-
-        if (ttsError || !ttsData?.audioContent) {
-          throw new Error(ttsError?.message || 'Failed to generate speech');
+        if (interpretedCmd.intent === 'help') {
+          const helpMsg = "You can say things like: Buy 100 dollars of PEPE, Sell all BONK, or Check my portfolio.";
+          await playAudioResponse(helpMsg);
+          onCommand(transcribedText, helpMsg);
+          setTranscribedText("");
+          setIsListening(false);
+          setIsProcessing(false);
+          return;
         }
 
-        // Play audio response
-        const audioUrl = base64ToAudioUrl(ttsData.audioContent);
-        if (!audioRef.current) {
-          audioRef.current = new Audio();
-        }
-        audioRef.current.src = audioUrl;
-        audioRef.current.play();
+        // Commands that need confirmation
+        if (interpretedCmd.needsConfirmation) {
+          const confText = generateConfirmationText(interpretedCmd);
+          setConfirmationText(confText);
+          setPendingCommand(interpretedCmd);
+          
+          // Speak confirmation
+          await playAudioResponse(`Did you mean: ${confText}`);
+          
+          // Show confirmation dialog
+          setShowConfirmation(true);
+        } else {
+          // Execute immediately (check, reset, help)
+          let commandToExecute: any;
+          if (interpretedCmd.intent === 'check') {
+            commandToExecute = { action: 'check' };
+          } else if (interpretedCmd.intent === 'reset') {
+            commandToExecute = { action: 'reset' };
+          }
 
-        // Log to console
-        onCommand(transcribedText, aiResponse);
+          onExecuteCommand(commandToExecute);
+          const aiResponse = `${interpretedCmd.intent === 'check' ? 'Checking your portfolio.' : 'Resetting your portfolio.'}`;
+          await playAudioResponse(aiResponse);
+          onCommand(transcribedText, aiResponse);
+        }
 
         setIsListening(false);
         setTranscribedText("");
       } catch (error) {
         console.error('Voice command error:', error);
-        onCommand("Error", error instanceof Error ? error.message : 'Voice command failed');
+        const errorMsg = error instanceof Error ? error.message : 'Voice command failed';
+        onCommand("Error", errorMsg);
+        await playAudioResponse(errorMsg);
         setIsListening(false);
         setTranscribedText("");
       } finally {
@@ -138,68 +246,80 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         setTranscribedText("Listening...");
       } catch (error) {
         console.error('Failed to start recording:', error);
-        onCommand("Error", error instanceof Error ? error.message : 'Failed to access microphone');
+        const errorMsg = error instanceof Error ? error.message : 'Failed to access microphone';
+        onCommand("Error", errorMsg);
       }
     }
   };
 
   return (
-    <div className="glass-card rounded-xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-gradient">Voice Commands</h2>
-        <Badge variant="outline" className="text-xs">
-          Press <kbd className="px-2 py-1 mx-1 bg-muted rounded">Space</kbd> to activate
-        </Badge>
-      </div>
-      
-      <div className="flex flex-col items-center gap-4">
-        {/* Waveform Visualizer */}
-        <WaveformVisualizer isActive={isListening || isSpeaking} isSpeaking={isSpeaking} />
-
-        <Button
-          onClick={handleVoiceCommand}
-          disabled={isProcessing}
-          size="lg"
-          className={`rounded-full w-20 h-20 transition-all ${
-            isListening 
-              ? 'bg-destructive hover:bg-destructive/90 animate-pulse scale-110' 
-              : 'bg-primary hover:bg-primary/90 hover-scale'
-          }`}
-        >
-          {isListening ? (
-            <MicOff className="h-8 w-8" />
-          ) : (
-            <Mic className="h-8 w-8" />
-          )}
-        </Button>
-
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground mb-2">
-            {isProcessing 
-              ? 'Processing your command...' 
-              : isSpeaking 
-              ? 'AI is responding...'
-              : isListening
-              ? 'Listening... Speak now'
-              : 'Click or press Space to speak'}
-          </p>
-          {transcribedText && (
-            <p className="text-sm font-medium animate-fade-in">
-              {transcribedText}
-            </p>
-          )}
+    <>
+      <div className="glass-card rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-gradient">Voice Commands</h2>
+          <Badge variant="outline" className="text-xs">
+            Press <kbd className="px-2 py-1 mx-1 bg-muted rounded">Space</kbd> to activate
+          </Badge>
         </div>
+        
+        <div className="flex flex-col items-center gap-4">
+          {/* Waveform Visualizer */}
+          <WaveformVisualizer isActive={isListening || isSpeaking} isSpeaking={isSpeaking} />
 
-        <div className="text-center space-y-2">
-          <p className="text-xs text-muted-foreground">Try saying:</p>
-          <div className="flex flex-wrap gap-2 justify-center">
-            <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Buy 100 BONK"</span>
-            <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Sell all PEPE"</span>
-            <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Check my portfolio"</span>
+          <Button
+            onClick={handleVoiceCommand}
+            disabled={isProcessing}
+            size="lg"
+            className={`rounded-full w-20 h-20 transition-all ${
+              isListening 
+                ? 'bg-destructive hover:bg-destructive/90 animate-pulse scale-110' 
+                : 'bg-primary hover:bg-primary/90 hover-scale'
+            }`}
+          >
+            {isListening ? (
+              <MicOff className="h-8 w-8" />
+            ) : (
+              <Mic className="h-8 w-8" />
+            )}
+          </Button>
+
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground mb-2">
+              {isProcessing 
+                ? 'Processing your command...' 
+                : isSpeaking 
+                ? 'AI is responding...'
+                : isListening
+                ? 'Listening... Speak now'
+                : 'Click or press Space to speak'}
+            </p>
+            {transcribedText && (
+              <p className="text-sm font-medium animate-fade-in">
+                {transcribedText}
+              </p>
+            )}
+          </div>
+
+          <div className="text-center space-y-2">
+            <p className="text-xs text-muted-foreground">Try saying:</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Buy hundred dollars PEPE"</span>
+              <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Sell all my BONK"</span>
+              <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Check portfolio"</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <ConfirmationDialog
+        isOpen={showConfirmation}
+        command={pendingCommand}
+        confirmationText={confirmationText}
+        onConfirm={handleCommandConfirm}
+        onCancel={handleCommandCancel}
+        timeout={5}
+      />
+    </>
   );
 };
 
