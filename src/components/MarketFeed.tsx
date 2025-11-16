@@ -23,13 +23,16 @@ const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, i
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-orbitron font-bold text-foreground">
-            🔥 Market Feed
+            🐳 Whale Market – Custom Meme Coins LIVE
           </h2>
           {isSimulating && (
             <span className="text-xs bg-destructive/20 text-destructive px-2 py-1 rounded animate-pulse">
               🔥 Volatile Mode ON
             </span>
           )}
+          <div className="text-xs bg-primary/20 text-primary px-2 py-1 rounded">
+            📊 Avg Volatility: {(tokens.reduce((sum, t) => sum + (t.volatility || 0.2), 0) / tokens.length * 100).toFixed(0)}%
+          </div>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
@@ -46,9 +49,7 @@ const MarketFeed = ({ tokens, onBuy, isSimulating, onToggleSimulation, isLive, i
               </TooltipTrigger>
               <TooltipContent>
                 <p className="font-inter">
-                  {isLive
-                    ? "Pulling real-time data from Dexscreener API"
-                    : "Using simulated market data"}
+                  Custom meme coin simulation with high volatility
                 </p>
               </TooltipContent>
             </Tooltip>
