@@ -145,6 +145,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     }
 
     console.log('✅ Executing pending action:', cmdToExecute);
+    console.log('🎯 Voice confirmation detected - calling onExecuteCommand');
     
     await stopConfirmationLoop();
     setShowConfirmation(false);
@@ -183,6 +184,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
       }
 
       console.log('Executing command:', commandToExecute);
+      console.log('📞 Calling onExecuteCommand with:', commandToExecute);
       onExecuteCommand(commandToExecute);
 
       let toastTitle = "✅ Trade Executed";
@@ -298,7 +300,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
       }
 
       const chunk = sttData || { transcript: '' };
-      const lowerTranscript = chunk.transcript.toLowerCase();
+      const lowerTranscript = (chunk.transcript || '').toLowerCase();
       console.log("Confirmation chunk:", lowerTranscript);
 
       if (confirmLoopActiveRef.current && pendingActionRef.current) {
@@ -306,6 +308,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
 
         if (parsed.action === 'confirm') {
           console.log("🎉 Heard 'yes'!");
+          console.log("Confirmed by voice — executing trade now.");
           confirmLoopActiveRef.current = false;
           setShowConfirmation(false);
 
@@ -323,6 +326,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
             reminderTimeoutRef.current = null;
           }
 
+          await playAudioResponse("Confirmed by voice. Executing trade now.");
           await executePendingAction();
           return;
         } else if (parsed.action === 'cancel') {
