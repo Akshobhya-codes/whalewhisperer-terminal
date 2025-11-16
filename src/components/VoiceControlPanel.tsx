@@ -34,11 +34,11 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   const confirmLoopActiveRef = useRef<boolean>(false);
   const confirmTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reminderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reminderIssuedRef = useRef<boolean>(false);
 
   // Hotkey support (Space bar)
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Only activate on Space if not typing in an input and no modal open (unless awaiting voice confirmation)
       if (e.code === 'Space' && !isProcessing && e.target === document.body) {
         if (!showConfirmation || confirmLoopActiveRef.current) {
           e.preventDefault();
@@ -51,7 +51,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [isListening, isProcessing, showConfirmation]);
 
-  // Track audio playback for speaking state
+  // Track audio playback
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -100,17 +100,18 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         };
         
         audioRef.current.addEventListener('ended', handleEnded);
-        audioRef.current.play().catch((error) => {
-          console.error('Failed to play audio:', error);
+        audioRef.current.play().catch(error => {
+          console.error('Audio playback failed:', error);
+          audioRef.current?.removeEventListener('ended', handleEnded);
           resolve();
         });
       });
     } catch (error) {
-      console.error('Audio playback error:', error);
+      console.error('Error generating audio response:', error);
     }
   };
 
-  // Stop all confirmation activity
+  // Stop the confirmation loop
   const stopConfirmationLoop = async () => {
     console.log('🛑 Stopping confirmation loop');
     confirmLoopActiveRef.current = false;
@@ -123,12 +124,13 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
       clearTimeout(reminderTimeoutRef.current);
       reminderTimeoutRef.current = null;
     }
+    reminderIssuedRef.current = false;
     
     if (recorderRef.current?.isRecording()) {
       try {
         await recorderRef.current.stop();
       } catch (e) {
-        console.error('Error stopping recorder:', e);
+        console.error("Error stopping recorder:", e);
       }
     }
     setIsListening(false);
@@ -136,65 +138,79 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
 
   // Execute the pending action
   const executePendingAction = async () => {
-    const action = pendingActionRef.current;
-    if (!action) {
-      console.error('❌ No pending action to execute');
+    const cmdToExecute = pendingActionRef.current;
+    if (!cmdToExecute) {
+      console.log('⚠️ No pending action to execute');
       return;
     }
 
-    console.log('✅ Executing pending action:', action);
+    console.log('✅ Executing pending action:', cmdToExecute);
     
     await stopConfirmationLoop();
     setShowConfirmation(false);
     setIsProcessing(true);
 
     try {
-      // Map to command format expected by onExecuteCommand
-      let commandToExecute: any;
-      
-      if (action.intent === 'buy') {
+      let commandToExecute: any | undefined;
+
+      if (cmdToExecute.intent === 'buy') {
+        if (!cmdToExecute.amount || !cmdToExecute.tokenSymbol) {
+          throw new Error('Missing amount or token for buy command');
+        }
         commandToExecute = {
           action: 'buy',
-          token: action.tokenSymbol,
-          amount: action.amountType === 'dollars' ? action.amount : undefined,
-          quantity: action.amountType === 'tokens' ? action.amount : undefined
+          token: cmdToExecute.tokenSymbol,
+          amount: cmdToExecute.amountType === 'dollars' ? cmdToExecute.amount : undefined,
+          quantity: cmdToExecute.amountType === 'tokens' ? cmdToExecute.amount : undefined
         };
-      } else if (action.intent === 'sell') {
+      } else if (cmdToExecute.intent === 'sell') {
+        if (!cmdToExecute.tokenSymbol) {
+          throw new Error('Missing token for sell command');
+        }
         commandToExecute = {
           action: 'sell',
-          token: action.tokenSymbol,
-          quantity: action.quantity === 'all' ? -1 : (action.amount ?? 0)
+          token: cmdToExecute.tokenSymbol,
+          quantity: cmdToExecute.quantity === 'all' ? -1 : (cmdToExecute.amount ?? 0)
         };
+      } else if (cmdToExecute.intent === 'check') {
+        commandToExecute = { action: 'check' };
+      } else if (cmdToExecute.intent === 'reset') {
+        commandToExecute = { action: 'reset' };
       }
 
       if (!commandToExecute) {
-        throw new Error(`Cannot execute ${action.intent}`);
+        throw new Error(`Unsupported command intent: ${cmdToExecute.intent}`);
       }
 
-      console.log('📤 Sending command:', commandToExecute);
+      console.log('Executing command:', commandToExecute);
       onExecuteCommand(commandToExecute);
 
-      // Success feedback
-      const successMsg = action.intent === 'buy' 
-        ? `Bought ${action.amountType === 'dollars' ? `$${action.amount}` : `${action.amount} tokens`} of ${action.tokenDisplayName}`
-        : `Sold ${action.quantity === 'all' ? 'all' : action.amount} ${action.tokenDisplayName}`;
-      
+      let toastTitle = "✅ Trade Executed";
+      let toastDescription = "";
+      if (cmdToExecute.intent === 'buy') {
+        toastDescription = `Bought ${cmdToExecute.amountType === 'dollars' ? `$${cmdToExecute.amount}` : `${cmdToExecute.amount} tokens`} of ${cmdToExecute.tokenDisplayName || cmdToExecute.tokenSymbol}`;
+      } else if (cmdToExecute.intent === 'sell') {
+        toastDescription = `Sold ${cmdToExecute.quantity === 'all' ? 'all' : cmdToExecute.amount} ${cmdToExecute.tokenDisplayName || cmdToExecute.tokenSymbol}`;
+      }
+
       toast({
-        title: "✅ Trade Executed",
-        description: successMsg,
+        title: toastTitle,
+        description: toastDescription,
         duration: 3000,
         className: "bg-success/10 border-success/50"
       });
 
-      await playAudioResponse(`Done! ${successMsg}`);
-      onCommand(action.rawText, `Trade executed: ${successMsg}`);
+      const successText = `Trade executed! ${confirmationText.replace('?', '.')}`;
+      await playAudioResponse(successText);
+      onCommand(cmdToExecute.rawText, successText);
 
-    } catch (error: any) {
-      console.error('❌ Execution error:', error);
-      const errorMsg = error.message || 'Failed to execute';
+    } catch (error) {
+      console.error('❌ Command execution error:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to execute command';
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: errorMsg,
+        duration: 3000,
         variant: "destructive"
       });
       await playAudioResponse(errorMsg);
@@ -231,451 +247,239 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     setTranscribedText("");
   };
 
-  const handleCommandConfirm = async (modifiedCommand?: InterpretedCommand) => {
-    const cmdToExecute = modifiedCommand || pendingActionRef.current;
-    if (!cmdToExecute) return;
+  // Start confirmation loop
+  const startConfirmationLoop = async () => {
+    console.log('🎯 Starting confirmation loop');
+    confirmLoopActiveRef.current = true;
+    reminderIssuedRef.current = false;
 
-    // Stop any ongoing confirmation listening loop and recording
-    await stopConfirmationLoop();
-    if (recorderRef.current?.isRecording()) {
-      try { await recorderRef.current.stop(); } catch {}
-    }
+    confirmTimeoutRef.current = setTimeout(async () => {
+      if (confirmLoopActiveRef.current) {
+        console.log('⏱️ Confirmation timeout');
+        await cancelPendingAction();
+      }
+    }, 15000);
 
-    setIsListening(false);
-    setShowConfirmation(false);
-    setIsProcessing(true);
+    reminderTimeoutRef.current = setTimeout(async () => {
+      if (confirmLoopActiveRef.current && !reminderIssuedRef.current) {
+        console.log('⏰ Reminder');
+        reminderIssuedRef.current = true;
+        await playAudioResponse("Still waiting. Say yes to confirm, or no to cancel.");
+      }
+    }, 10000);
+
+    await continuouslyListenForConfirmation();
+  };
+
+  // Continuously listen for yes/no
+  const continuouslyListenForConfirmation = async () => {
+    if (!confirmLoopActiveRef.current) return;
 
     try {
-      // Map interpreted command to old command format
-      let commandToExecute: any | undefined;
+      console.log('🎤 New confirmation chunk');
+      recorderRef.current = new AudioRecorder();
+      await recorderRef.current.start();
+      setIsListening(true);
 
-      if (cmdToExecute.intent === 'buy') {
-        if (!cmdToExecute.amount || !cmdToExecute.tokenSymbol) {
-          throw new Error('Missing amount or token for buy command');
-        }
-        commandToExecute = {
-          action: 'buy',
-          token: cmdToExecute.tokenSymbol,
-          amount: cmdToExecute.amountType === 'dollars' ? cmdToExecute.amount : undefined,
-          quantity: cmdToExecute.amountType === 'tokens' ? cmdToExecute.amount : undefined
-        };
-      } else if (cmdToExecute.intent === 'sell') {
-        if (!cmdToExecute.tokenSymbol) {
-          throw new Error('Missing token for sell command');
-        }
-        commandToExecute = {
-          action: 'sell',
-          token: cmdToExecute.tokenSymbol,
-          quantity: cmdToExecute.quantity === 'all' ? -1 : (cmdToExecute.amount ?? 0)
-        };
-      } else if (cmdToExecute.intent === 'check') {
-        commandToExecute = { action: 'check' };
-      } else if (cmdToExecute.intent === 'reset') {
-        commandToExecute = { action: 'reset' };
-      }
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-      if (!commandToExecute) {
-        throw new Error(`Unsupported command intent: ${cmdToExecute.intent}`);
-      }
+      if (!recorderRef.current || !confirmLoopActiveRef.current) return;
 
-      console.log('Executing command:', commandToExecute);
+      const audioBlob = await recorderRef.current.stop();
+      setIsListening(false);
+      const base64Audio = await blobToBase64(audioBlob);
 
-      // Execute command
-      onExecuteCommand(commandToExecute);
-
-      // Show success toast
-      let toastTitle = "✅ Trade Executed";
-      let toastDescription = "";
-      if (cmdToExecute.intent === 'buy') {
-        toastDescription = `Bought ${cmdToExecute.amountType === 'dollars' ? `$${cmdToExecute.amount}` : `${cmdToExecute.amount} tokens`} of ${cmdToExecute.tokenDisplayName || cmdToExecute.tokenSymbol}`;
-      } else if (cmdToExecute.intent === 'sell') {
-        toastDescription = `Sold ${cmdToExecute.quantity === 'all' ? 'all' : cmdToExecute.amount} ${cmdToExecute.tokenDisplayName || cmdToExecute.tokenSymbol}`;
-      } else if (cmdToExecute.intent === 'check') {
-        toastTitle = "📊 Portfolio Check";
-        toastDescription = "Checking your holdings";
-      } else if (cmdToExecute.intent === 'reset') {
-        toastTitle = "🔄 Portfolio Reset";
-        toastDescription = "Your portfolio has been reset";
-      }
-
-      toast({
-        title: toastTitle,
-        description: toastDescription,
-        duration: 3000,
-        className: "bg-success/10 border-success/50 animate-scale-in"
+      const { data: sttData, error: sttError } = await supabase.functions.invoke('hathora-stt', {
+        body: { audioData: base64Audio }
       });
 
-      // Generate success response
-      const successText = modifiedCommand 
-        ? `Trade executed! ${generateConfirmationText(modifiedCommand).replace('?', '.')}` 
-        : `Trade executed! ${confirmationText.replace('?', '.')}`;
-      await playAudioResponse(successText);
-      onCommand(cmdToExecute.rawText, successText);
+      if (sttError) {
+        console.error('STT error:', sttError);
+      }
 
-    } catch (error) {
-      console.error('Command execution error:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Failed to execute command';
-      await playAudioResponse(errorMsg);
-      onCommand(cmdToExecute.rawText, errorMsg);
-    } finally {
-      setIsProcessing(false);
-      setPendingCommand(null);
-      setTranscribedText("");
-    }
-  };
+      const chunk = sttData || { transcript: '' };
+      const lowerTranscript = chunk.transcript.toLowerCase();
+      console.log("Confirmation chunk:", lowerTranscript);
 
-  const handleCommandCancel = async () => {
-    // Stop loop and any recording immediately
-    confirmLoopActiveRef.current = false;
-    if (confirmChunkTimerRef.current) {
-      clearTimeout(confirmChunkTimerRef.current);
-      confirmChunkTimerRef.current = null;
-    }
-    if (recorderRef.current?.isRecording()) {
-      try { await recorderRef.current.stop(); } catch {}
-    }
-    setIsListening(false);
+      if (confirmLoopActiveRef.current && pendingActionRef.current) {
+        const parsed = parseConfirmationResponse(lowerTranscript);
 
-    setShowConfirmation(false);
-    setIsAwaitingConfirmation(false);
-    if (confirmationTimeoutRef.current) {
-      clearTimeout(confirmationTimeoutRef.current);
-    }
-    
-    const cancelMsg = "Command cancelled.";
-    await playAudioResponse(cancelMsg);
-    if (pendingCommand) {
-      onCommand(pendingCommand.rawText, cancelMsg);
-    }
-    setPendingCommand(null);
-    setTranscribedText("");
-  };
-
-  const listenForConfirmation = async () => {
-    try {
-      setIsAwaitingConfirmation(true);
-      setTranscribedText("Say yes, no, or change the amount...");
-      confirmLoopActiveRef.current = true;
-
-      const startTime = Date.now();
-
-      const startChunk = async () => {
-        if (!confirmLoopActiveRef.current) return;
-
-        // Global timeout safeguard
-        if (Date.now() - startTime > 20000) {
+        if (parsed.action === 'confirm') {
+          console.log("🎉 Heard 'yes'!");
           confirmLoopActiveRef.current = false;
-          await handleCommandCancel();
+          setShowConfirmation(false);
+
+          if (recorderRef.current?.isRecording()) {
+            try { await recorderRef.current.stop(); } catch {}
+          }
+          setIsListening(false);
+
+          if (confirmTimeoutRef.current) {
+            clearTimeout(confirmTimeoutRef.current);
+            confirmTimeoutRef.current = null;
+          }
+          if (reminderTimeoutRef.current) {
+            clearTimeout(reminderTimeoutRef.current);
+            reminderTimeoutRef.current = null;
+          }
+
+          await executePendingAction();
+          return;
+        } else if (parsed.action === 'cancel') {
+          console.log("❌ Heard 'no'");
+          await cancelPendingAction();
           return;
         }
+      }
 
-        // Start a short recording chunk
-        recorderRef.current = new AudioRecorder();
-        await recorderRef.current.start();
-        setIsListening(true);
-
-        if (confirmChunkTimerRef.current) clearTimeout(confirmChunkTimerRef.current);
-        confirmChunkTimerRef.current = setTimeout(async () => {
-          try {
-            if (!recorderRef.current) return;
-            const audioBlob = await recorderRef.current.stop();
-            setIsListening(false);
-            const base64Audio = await blobToBase64(audioBlob);
-
-            // Send to STT
-            const { data: sttData, error: sttError } = await supabase.functions.invoke('hathora-stt', {
-              body: { audioData: base64Audio }
-            });
-
-            if (sttError) {
-              console.error('STT error during confirmation:', sttError);
-            }
-
-            const text = sttData?.text || '';
-            if (text) {
-              console.log('Confirmation chunk transcribed:', text);
-              setTranscribedText(text);
-              if (isAwaitingConfirmation && pendingCommand) {
-                const response = parseConfirmationResponse(text);
-                if (response.action === 'confirm') {
-                  confirmLoopActiveRef.current = false;
-                  if (confirmationTimeoutRef.current) clearTimeout(confirmationTimeoutRef.current);
-                  await handleCommandConfirm();
-                  return;
-                } else if (response.action === 'cancel') {
-                  confirmLoopActiveRef.current = false;
-                  if (confirmationTimeoutRef.current) clearTimeout(confirmationTimeoutRef.current);
-                  await handleCommandCancel();
-                  return;
-                } else if (response.action === 'modify' && response.newAmount) {
-                  const modifiedCommand = {
-                    ...pendingCommand,
-                    amount: response.newAmount,
-                    amountType: response.newAmountType
-                  } as InterpretedCommand;
-                  const newConfText = generateConfirmationText(modifiedCommand);
-                  setPendingCommand(modifiedCommand);
-                  setConfirmationText(newConfText);
-                  await playAudioResponse(`Updated to: ${newConfText}. Say yes to confirm or no to cancel.`);
-                  // fall through to keep listening
-                }
-              }
-            }
-          } catch (err) {
-            console.error('Confirmation chunk processing error:', err);
-          } finally {
-            // Schedule next chunk quickly for near-continuous listening
-            setTimeout(startChunk, 150);
-          }
-        }, 2200); // listen ~2.2s per chunk
-      };
-
-      // Overall timeout
-      if (confirmationTimeoutRef.current) clearTimeout(confirmationTimeoutRef.current);
-      confirmationTimeoutRef.current = setTimeout(async () => {
-        if (!confirmLoopActiveRef.current) return;
-        confirmLoopActiveRef.current = false;
-        if (recorderRef.current?.isRecording()) {
-          try { await recorderRef.current.stop(); } catch {}
-          setIsListening(false);
-        }
-        await handleCommandCancel();
-      }, 20000);
-
-      // Kick off the first chunk
-      await startChunk();
+      if (pendingActionRef.current && confirmLoopActiveRef.current) {
+        await continuouslyListenForConfirmation();
+      }
     } catch (error) {
-      console.error('Failed to start confirmation listening:', error);
-      await handleCommandCancel();
+      console.error('Error in confirmation listening:', error);
+      await stopConfirmationLoop();
+      setShowConfirmation(false);
+      setIsListening(false);
     }
   };
 
   const handleVoiceCommand = async () => {
-    if (isListening) {
-      // Stop recording
-      try {
-        setIsProcessing(true);
-        const audioBlob = await recorderRef.current!.stop();
-        const base64Audio = await blobToBase64(audioBlob);
+    if (isListening || isProcessing || isSpeaking) {
+      console.log('Already busy');
+      return;
+    }
 
-        console.log('Sending audio to Hathora STT...');
-        setTranscribedText("Processing...");
+    try {
+      setIsListening(true);
+      setIsProcessing(true);
+      setTranscribedText("");
 
-        // Send to Hathora STT
-        const { data: sttData, error: sttError } = await supabase.functions.invoke('hathora-stt', {
-          body: { audioData: base64Audio }
-        });
+      recorderRef.current = new AudioRecorder();
+      await recorderRef.current.start();
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-        if (sttError || !sttData?.text) {
-          throw new Error(sttError?.message || 'Failed to transcribe audio');
-        }
+      const audioBlob = await recorderRef.current.stop();
+      setIsListening(false);
+      const base64Audio = await blobToBase64(audioBlob);
 
-        const transcribedText = sttData.text;
-        console.log('Transcribed:', transcribedText);
-        setTranscribedText(transcribedText);
+      const { data: sttData, error: sttError } = await supabase.functions.invoke('hathora-stt', {
+        body: { audioData: base64Audio }
+      });
 
-        // Clear timeout if listening for confirmation
-        if (confirmationTimeoutRef.current) {
-          clearTimeout(confirmationTimeoutRef.current);
-        }
+      if (sttError) throw sttError;
 
-        // Handle confirmation response
-        if (isAwaitingConfirmation && pendingCommand) {
-          const response = parseConfirmationResponse(transcribedText);
-          console.log('Confirmation response:', response);
+      const transcribedCommand = sttData?.text || "";
+      setTranscribedText(transcribedCommand);
 
-          if (response.action === 'confirm') {
-            await handleCommandConfirm();
-          } else if (response.action === 'cancel') {
-            await handleCommandCancel();
-          } else if (response.action === 'modify' && response.newAmount) {
-            // Update the pending command with new amount
-            const modifiedCommand = {
-              ...pendingCommand,
-              amount: response.newAmount,
-              amountType: response.newAmountType
-            };
-            
-            const newConfText = generateConfirmationText(modifiedCommand);
-            setConfirmationText(newConfText);
-            await playAudioResponse(`Updated to: ${newConfText}. Say yes to confirm or no to cancel.`);
-            
-            // Listen again for final confirmation
-            setPendingCommand(modifiedCommand);
-            setIsProcessing(false);
-            await listenForConfirmation();
-            return;
-          }
-
-          setIsListening(false);
-          setIsAwaitingConfirmation(false);
-          setIsProcessing(false);
-          return;
-        }
-
-        // Regular command interpretation
-        const interpretedCmd = interpretCommand(transcribedText, tokens);
-        console.log('Interpreted command:', interpretedCmd);
-
-        // Handle different command types
-        if (interpretedCmd.intent === 'unknown' || interpretedCmd.confidence < 0.4) {
-          const fallbackMsg = "I didn't catch that fully. Try again, or say 'help' for examples.";
-          await playAudioResponse(fallbackMsg);
-          onCommand(transcribedText, fallbackMsg);
-          setTranscribedText("");
-          setIsListening(false);
-          setIsProcessing(false);
-          return;
-        }
-
-        if (interpretedCmd.intent === 'help') {
-          const helpMsg = "You can say things like: Buy 100 dollars of PEPE, Sell all BONK, or Check my portfolio.";
-          await playAudioResponse(helpMsg);
-          onCommand(transcribedText, helpMsg);
-          setTranscribedText("");
-          setIsListening(false);
-          setIsProcessing(false);
-          return;
-        }
-
-        // Commands that need confirmation
-        if (interpretedCmd.needsConfirmation) {
-          const confText = generateConfirmationText(interpretedCmd);
-          setConfirmationText(confText);
-          setPendingCommand(interpretedCmd);
-          setShowConfirmation(true);
-          
-          // Speak confirmation and WAIT for it to finish before listening
-          setIsListening(false);
-          setIsProcessing(true);
-          await playAudioResponse(`Did you mean: ${confText}. Say yes to confirm, no to cancel, or say a new amount.`);
-          
-          // Now that audio finished, start listening for confirmation response
-          setIsProcessing(false);
-          await listenForConfirmation();
-          return;
-        } else {
-          // Execute immediately (check, reset)
-          let commandToExecute: any | undefined;
-          if (interpretedCmd.intent === 'check') {
-            commandToExecute = { action: 'check' };
-          } else if (interpretedCmd.intent === 'reset') {
-            commandToExecute = { action: 'reset' };
-          }
-
-          if (!commandToExecute) {
-            const msg = "I didn't catch that fully. Try again, or say 'help' for examples.";
-            await playAudioResponse(msg);
-            onCommand(transcribedText, msg);
-            setIsListening(false);
-            setIsProcessing(false);
-            return;
-          }
-
-          onExecuteCommand(commandToExecute);
-          const aiResponse = `${interpretedCmd.intent === 'check' ? 'Checking your portfolio.' : 'Resetting your portfolio.'}`;
-          await playAudioResponse(aiResponse);
-          onCommand(transcribedText, aiResponse);
-        }
-
-        setIsListening(false);
-        setTranscribedText("");
-      } catch (error) {
-        console.error('Voice command error:', error);
-        const errorMsg = error instanceof Error ? error.message : 'Voice command failed';
-        onCommand("Error", errorMsg);
-        await playAudioResponse(errorMsg);
-        setIsListening(false);
-        setIsAwaitingConfirmation(false);
-        setTranscribedText("");
-      } finally {
-        setIsProcessing(false);
+      if (!transcribedCommand.trim()) {
+        throw new Error("No speech detected. Please try again.");
       }
-    } else {
-      // Start recording
-      try {
-        recorderRef.current = new AudioRecorder();
-        await recorderRef.current.start();
-        setIsListening(true);
-        setTranscribedText("Listening...");
-      } catch (error) {
-        console.error('Failed to start recording:', error);
-        const errorMsg = error instanceof Error ? error.message : 'Failed to access microphone';
-        onCommand("Error", errorMsg);
+
+      console.log('Transcribed:', transcribedCommand);
+
+      const interpreted = interpretCommand(transcribedCommand, tokens);
+      console.log('Interpreted:', interpreted.intent, interpreted.tokenSymbol, interpreted.amount);
+
+      if (interpreted.needsConfirmation) {
+        if (pendingActionRef.current) {
+          console.log("Canceling previous command");
+          await stopConfirmationLoop();
+        }
+
+        const confirmText = generateConfirmationText(interpreted);
+        setConfirmationText(confirmText);
+        pendingActionRef.current = interpreted;
+        setShowConfirmation(true);
+
+        await playAudioResponse(confirmText + " Say yes to confirm, or no to cancel.");
+        await startConfirmationLoop();
+
+      } else {
+        console.log('No confirmation needed');
+        pendingActionRef.current = interpreted;
+        await executePendingAction();
       }
+    } catch (error: any) {
+      console.error('Error handling voice command:', error);
+      confirmLoopActiveRef.current = false;
+
+      const aiResponse = error.message || "Sorry, I didn't understand that command.";
+      onCommand(transcribedText, aiResponse);
+      pendingActionRef.current = null;
+      setShowConfirmation(false);
+      await playAudioResponse(aiResponse);
+    } finally {
+      setIsProcessing(false);
+      if (recorderRef.current?.isRecording()) {
+        try {
+          await recorderRef.current.stop();
+        } catch (e) {
+          console.error("Error stopping recorder:", e);
+        }
+      }
+      setIsListening(false);
     }
   };
 
   return (
-    <>
-      <div className="glass-card rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gradient">Voice Commands</h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Voice Control</h2>
+        <div className="flex gap-2 items-center">
           <Badge variant="outline" className="text-xs">
-            Press <kbd className="px-2 py-1 mx-1 bg-muted rounded">Space</kbd> to activate
+            {isListening ? "🎤 Listening..." : isSpeaking ? "🔊 Speaking..." : "💤 Idle"}
           </Badge>
-        </div>
-        
-        <div className="flex flex-col items-center gap-4">
-          {/* Waveform Visualizer */}
-          <WaveformVisualizer isActive={isListening || isSpeaking} isSpeaking={isSpeaking} />
-
-          <Button
-            onClick={handleVoiceCommand}
-            disabled={isProcessing}
-            size="lg"
-            className={`rounded-full w-20 h-20 transition-all ${
-              isListening 
-                ? 'bg-destructive hover:bg-destructive/90 animate-pulse scale-110' 
-                : 'bg-primary hover:bg-primary/90 hover-scale'
-            }`}
-          >
-            {isListening ? (
-              <MicOff className="h-8 w-8" />
-            ) : (
-              <Mic className="h-8 w-8" />
-            )}
-          </Button>
-
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground mb-2">
-              {isProcessing 
-                ? '⚙️ Processing your command...' 
-                : isSpeaking 
-                ? '🔊 AI is responding...'
-                : isAwaitingConfirmation
-                ? '🎙️ Listening for your confirmation (say yes or no)...'
-                : isListening
-                ? '🎙️ Listening... Speak now'
-                : '💬 Click or press Space to speak'}
-            </p>
-            {transcribedText && (
-              <p className="text-sm font-medium animate-fade-in text-primary">
-                "{transcribedText}"
-              </p>
-            )}
-          </div>
-
-          <div className="text-center space-y-2">
-            <p className="text-xs text-muted-foreground">Try saying:</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Buy hundred dollars PEPE"</span>
-              <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Sell all my BONK"</span>
-              <span className="px-3 py-1 bg-muted rounded-full text-xs hover-scale cursor-default">"Check portfolio"</span>
-            </div>
-          </div>
+          {confirmLoopActiveRef.current && pendingActionRef.current && (
+            <Badge variant="secondary" className="text-xs animate-pulse">
+              🎯 Listening for confirmation...
+            </Badge>
+          )}
         </div>
       </div>
 
-      <ConfirmationDialog
-        isOpen={showConfirmation}
-        command={pendingCommand}
-        confirmationText={confirmationText}
-        onConfirm={handleCommandConfirm}
-        onCancel={handleCommandCancel}
-        timeout={20}
-      />
-    </>
+      <div className="flex flex-col gap-4">
+        <Button
+          onClick={handleVoiceCommand}
+          disabled={isListening || isProcessing || isSpeaking}
+          size="lg"
+          className="w-full"
+        >
+          {isListening ? (
+            <>
+              <MicOff className="mr-2 h-5 w-5" />
+              Listening...
+            </>
+          ) : (
+            <>
+              <Mic className="mr-2 h-5 w-5" />
+              {isSpeaking ? "Speaking..." : "Hold to Speak (Space)"}
+            </>
+          )}
+        </Button>
+
+        {isListening && <WaveformVisualizer isActive={isListening} isSpeaking={isSpeaking} />}
+
+        {transcribedText && (
+          <div className="p-4 bg-muted rounded-lg">
+            <p className="text-sm font-medium">You said:</p>
+            <p className="text-sm">{transcribedText}</p>
+          </div>
+        )}
+      </div>
+
+      {showConfirmation && pendingActionRef.current && (
+        <ConfirmationDialog
+          isOpen={showConfirmation}
+          command={pendingActionRef.current}
+          confirmationText={confirmationText}
+          onConfirm={executePendingAction}
+          onCancel={cancelPendingAction}
+          timeout={15}
+        />
+      )}
+
+      <audio ref={audioRef} className="hidden" />
+    </div>
   );
 };
 
