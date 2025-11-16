@@ -33,6 +33,9 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   const confirmationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const confirmLoopActiveRef = useRef<boolean>(false);
   const confirmChunkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const reminderIssuedRef = useRef<boolean>(false);
+  const pendingRef = useRef<InterpretedCommand | null>(null);
+  const executingRef = useRef<boolean>(false);
 
   // Hotkey support (Space bar)
   useEffect(() => {

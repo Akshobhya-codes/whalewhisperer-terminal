@@ -98,7 +98,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
         <DialogFooter className="flex-col sm:flex-row gap-3 pt-2">
           <Button
             variant="outline"
-            onClick={onCancel}
+            onClick={() => onCancel()}
             size="lg"
             className="flex-1 border-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive transition-all"
           >
@@ -106,7 +106,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
             ❌ No, Cancel
           </Button>
           <Button
-            onClick={onConfirm}
+            onClick={() => onConfirm()}
             size="lg"
             className="flex-1 bg-success hover:bg-success/90 text-success-foreground font-bold shadow-lg shadow-success/50 hover:shadow-success/70 transition-all animate-pulse border-2 border-success"
           >
