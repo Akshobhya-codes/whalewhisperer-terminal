@@ -30,7 +30,7 @@ const tokenAliases: Record<string, string[]> = {
   'ZGA': ['zuga', 'zooka', 'zuka'],
   'FLP': ['floop', 'flute', 'flip', 'flop'],
   'TKU': ['toku', 'tokoo', 'toco'],
-  'RMB': ['rambo', 'ramboo', 'rumbo'],
+  'RMB': ['rambo', 'ramboo', 'rumbo', 'frambo'],
   'MIK': ['mika', 'meeka', 'mica', 'myka']
 };
 
