@@ -66,7 +66,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     };
   }, []);
 
-  const playAudioResponse = async (text: string) => {
+  const playAudioResponse = async (text: string): Promise<void> => {
     try {
       const { data: ttsData, error: ttsError } = await supabase.functions.invoke('hathora-tts', {
         body: { text, voice: 'af_bella', speed: 1.1 }
@@ -82,7 +82,34 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         audioRef.current = new Audio();
       }
       audioRef.current.src = audioUrl;
-      await audioRef.current.play();
+      
+      // Return a promise that resolves when audio finishes playing
+      return new Promise((resolve, reject) => {
+        if (!audioRef.current) {
+          resolve();
+          return;
+        }
+        
+        const handleEnded = () => {
+          audioRef.current?.removeEventListener('ended', handleEnded);
+          audioRef.current?.removeEventListener('error', handleError);
+          resolve();
+        };
+        
+        const handleError = (error: Event) => {
+          audioRef.current?.removeEventListener('ended', handleEnded);
+          audioRef.current?.removeEventListener('error', handleError);
+          console.error('Audio playback error:', error);
+          resolve(); // Resolve anyway to continue flow
+        };
+        
+        audioRef.current.addEventListener('ended', handleEnded);
+        audioRef.current.addEventListener('error', handleError);
+        audioRef.current.play().catch((error) => {
+          console.error('Failed to play audio:', error);
+          resolve(); // Resolve anyway
+        });
+      });
     } catch (error) {
       console.error('Audio playback error:', error);
     }
@@ -182,7 +209,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
           setIsListening(false);
           await handleCommandCancel();
         }
-      }, 15000); // 15 seconds to respond
+      }, 20000); // 20 seconds to respond
 
     } catch (error) {
       console.error('Failed to start confirmation listening:', error);
@@ -283,16 +310,15 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
           const confText = generateConfirmationText(interpretedCmd);
           setConfirmationText(confText);
           setPendingCommand(interpretedCmd);
+          setShowConfirmation(true);
           
-          // Speak confirmation
+          // Speak confirmation and WAIT for it to finish before listening
+          setIsListening(false);
+          setIsProcessing(true);
           await playAudioResponse(`Did you mean: ${confText}. Say yes to confirm, no to cancel, or say a new amount.`);
           
-          // Show confirmation dialog
-          setShowConfirmation(true);
-          setIsListening(false);
+          // Now that audio finished, start listening for confirmation response
           setIsProcessing(false);
-          
-          // Start listening for confirmation response
           await listenForConfirmation();
           return;
         } else {
@@ -405,7 +431,7 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
         confirmationText={confirmationText}
         onConfirm={handleCommandConfirm}
         onCancel={handleCommandCancel}
-        timeout={15}
+        timeout={20}
       />
     </>
   );
