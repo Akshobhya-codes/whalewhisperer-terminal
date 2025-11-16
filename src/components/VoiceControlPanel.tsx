@@ -29,6 +29,8 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const confirmationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const confirmLoopActiveRef = useRef<boolean>(false);
+  const confirmChunkTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Hotkey support (Space bar)
   useEffect(() => {
@@ -119,6 +121,17 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
     const cmdToExecute = modifiedCommand || pendingCommand;
     if (!cmdToExecute) return;
 
+    // Stop any ongoing confirmation listening loop and recording
+    confirmLoopActiveRef.current = false;
+    if (confirmChunkTimerRef.current) {
+      clearTimeout(confirmChunkTimerRef.current);
+      confirmChunkTimerRef.current = null;
+    }
+    if (recorderRef.current?.isRecording()) {
+      try { await recorderRef.current.stop(); } catch {}
+    }
+
+    setIsListening(false);
     setShowConfirmation(false);
     setIsAwaitingConfirmation(false);
     setIsProcessing(true);
@@ -179,6 +192,17 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   };
 
   const handleCommandCancel = async () => {
+    // Stop loop and any recording immediately
+    confirmLoopActiveRef.current = false;
+    if (confirmChunkTimerRef.current) {
+      clearTimeout(confirmChunkTimerRef.current);
+      confirmChunkTimerRef.current = null;
+    }
+    if (recorderRef.current?.isRecording()) {
+      try { await recorderRef.current.stop(); } catch {}
+    }
+    setIsListening(false);
+
     setShowConfirmation(false);
     setIsAwaitingConfirmation(false);
     if (confirmationTimeoutRef.current) {
@@ -197,20 +221,96 @@ const VoiceControlPanel = ({ onCommand, tokens, holdings, balance, onExecuteComm
   const listenForConfirmation = async () => {
     try {
       setIsAwaitingConfirmation(true);
-      recorderRef.current = new AudioRecorder();
-      await recorderRef.current.start();
-      setIsListening(true);
       setTranscribedText("Say yes, no, or change the amount...");
+      confirmLoopActiveRef.current = true;
 
-      // Set auto-timeout
-      confirmationTimeoutRef.current = setTimeout(async () => {
-        if (isListening && recorderRef.current) {
-          await recorderRef.current.stop();
-          setIsListening(false);
+      const startTime = Date.now();
+
+      const startChunk = async () => {
+        if (!confirmLoopActiveRef.current) return;
+
+        // Global timeout safeguard
+        if (Date.now() - startTime > 20000) {
+          confirmLoopActiveRef.current = false;
           await handleCommandCancel();
+          return;
         }
-      }, 20000); // 20 seconds to respond
 
+        // Start a short recording chunk
+        recorderRef.current = new AudioRecorder();
+        await recorderRef.current.start();
+        setIsListening(true);
+
+        if (confirmChunkTimerRef.current) clearTimeout(confirmChunkTimerRef.current);
+        confirmChunkTimerRef.current = setTimeout(async () => {
+          try {
+            if (!recorderRef.current) return;
+            const audioBlob = await recorderRef.current.stop();
+            setIsListening(false);
+            const base64Audio = await blobToBase64(audioBlob);
+
+            // Send to STT
+            const { data: sttData, error: sttError } = await supabase.functions.invoke('hathora-stt', {
+              body: { audioData: base64Audio }
+            });
+
+            if (sttError) {
+              console.error('STT error during confirmation:', sttError);
+            }
+
+            const text = sttData?.text || '';
+            if (text) {
+              console.log('Confirmation chunk transcribed:', text);
+              setTranscribedText(text);
+              if (isAwaitingConfirmation && pendingCommand) {
+                const response = parseConfirmationResponse(text);
+                if (response.action === 'confirm') {
+                  confirmLoopActiveRef.current = false;
+                  if (confirmationTimeoutRef.current) clearTimeout(confirmationTimeoutRef.current);
+                  await handleCommandConfirm();
+                  return;
+                } else if (response.action === 'cancel') {
+                  confirmLoopActiveRef.current = false;
+                  if (confirmationTimeoutRef.current) clearTimeout(confirmationTimeoutRef.current);
+                  await handleCommandCancel();
+                  return;
+                } else if (response.action === 'modify' && response.newAmount) {
+                  const modifiedCommand = {
+                    ...pendingCommand,
+                    amount: response.newAmount,
+                    amountType: response.newAmountType
+                  } as InterpretedCommand;
+                  const newConfText = generateConfirmationText(modifiedCommand);
+                  setPendingCommand(modifiedCommand);
+                  setConfirmationText(newConfText);
+                  await playAudioResponse(`Updated to: ${newConfText}. Say yes to confirm or no to cancel.`);
+                  // fall through to keep listening
+                }
+              }
+            }
+          } catch (err) {
+            console.error('Confirmation chunk processing error:', err);
+          } finally {
+            // Schedule next chunk quickly for near-continuous listening
+            setTimeout(startChunk, 150);
+          }
+        }, 2200); // listen ~2.2s per chunk
+      };
+
+      // Overall timeout
+      if (confirmationTimeoutRef.current) clearTimeout(confirmationTimeoutRef.current);
+      confirmationTimeoutRef.current = setTimeout(async () => {
+        if (!confirmLoopActiveRef.current) return;
+        confirmLoopActiveRef.current = false;
+        if (recorderRef.current?.isRecording()) {
+          try { await recorderRef.current.stop(); } catch {}
+          setIsListening(false);
+        }
+        await handleCommandCancel();
+      }, 20000);
+
+      // Kick off the first chunk
+      await startChunk();
     } catch (error) {
       console.error('Failed to start confirmation listening:', error);
       await handleCommandCancel();
